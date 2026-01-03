@@ -7,13 +7,16 @@ export class ImapService extends EventEmitter {
     private imap: Imap;
     private config: ImapConfig;
     private filter: EmailFilter;
-    private isConnected: boolean = false;
+
+    private isConnected = false;
+    private isInboxOpen= false;
 
     constructor(config: ImapConfig, filter: EmailFilter) {
         super();
         this.config = config;
         this.filter = filter;
         this.imap = new Imap(config);
+        
         this.setupEventHandlers();
     }
 
@@ -21,21 +24,29 @@ export class ImapService extends EventEmitter {
      * Setup IMAP event handlers
      */
     private setupEventHandlers(): void {
-        this.imap.once('ready', () => {
+        this.imap.on('ready', async () => {
             console.log('✓ IMAP connection ready');
             this.isConnected = true;
-            this.openInbox();
+
+            try {
+                await this.openInbox();
+                this.emit('ready');
+            } catch (err) {
+                this.emit('error', err);
+            }
         });
 
-        this.imap.once('error', (err: Error) => {
+        this.imap.on('error', (err: Error) => {
             console.error('✗ IMAP error:', err.message);
             this.isConnected = false;
+            this.isInboxOpen = false;
             this.emit('error', err);
         });
 
-        this.imap.once('end', () => {
+        this.imap.on('end', () => {
             console.log('IMAP connection ended');
             this.isConnected = false;
+            this.isInboxOpen = false;
             this.emit('disconnected');
         });
     }
@@ -45,15 +56,14 @@ export class ImapService extends EventEmitter {
      */
     connect(): Promise<void> {
         return new Promise((resolve, reject) => {
-            if (this.isConnected) {
-                resolve();
-                return;
-            }
+            if (this.isConnected) return resolve();
 
-            console.log(`Connecting to IMAP server: ${this.config.host}:${this.config.port}`);
-
-            this.imap.once('ready', () => resolve());
-            this.imap.once('error', (err: Error) => reject(err));
+            console.log(
+                `Connecting to IMAP server ${this.config.host}:${this.config.port}...`
+            );
+            
+            this.once('ready', () => resolve());
+            this.once('error', reject);
 
             this.imap.connect();
         });
@@ -62,15 +72,20 @@ export class ImapService extends EventEmitter {
     /**
      * Open inbox folder
      */
-    private openInbox(): void {
-        this.imap.openBox('INBOX', false, (err, box) => {
+    private openInbox(): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.imap.openBox('INBOX', false, (err, box) => {
             if (err) {
                 console.error('Error opening inbox:', err);
-                this.emit('error', err);
-                return;
+                reject(err);
             }
-            console.log(`✓ Inbox opened (${box.messages.total} messages)`);
-            this.emit('ready');
+            console.log(
+                `✓ Inbox opened (status: ${this.imap.state}). Total messages: ${box.messages.total}`
+            );
+
+            this.isInboxOpen = true;
+            resolve();
+            });
         });
     }
 
@@ -78,20 +93,24 @@ export class ImapService extends EventEmitter {
      * Monitor inbox for new emails
      */
     monitorInbox(): void {
-        if (!this.isConnected) {
-            console.error('Not connected to IMAP server');
-            return;
+        if (!this.isConnected || !this.isInboxOpen) {
+            throw new Error(
+                'IMAP not ready. Connect and open inbox first.'
+            );
         }
 
         console.log('Monitoring inbox for new emails...');
-        console.log(`Filter: From="${this.filter.from}", Subject contains="${this.filter.subject}"`);
+        console.log(
+            `Filter: From="${this.filter.from}", Subject contains="${this.filter.subject}"`
+        );
 
+        // New mail event
         this.imap.on('mail', (numNewMsgs: number) => {
             console.log(`\n📧 ${numNewMsgs} new email(s) received`);
             this.fetchUnreadEmails();
         });
 
-        // Also check for existing unread emails on start
+        // Initial scan
         this.fetchUnreadEmails();
     }
 
@@ -99,68 +118,94 @@ export class ImapService extends EventEmitter {
      * Fetch unread emails matching filter
      */
     private fetchUnreadEmails(): void {
-        this.imap.search(['UNSEEN'], (err, results) => {
-            if (err) {
-                console.error('Error searching emails:', err);
-                return;
-            }
+        if (!this.isInboxOpen) {
+            console.warn('Inbox not open yet, skipping fetch');
+            return;
+        }
 
-            if (!results || results.length === 0) {
-                console.log('No unread emails found');
-                return;
-            }
+        // Defensive check for IMAP state if accessible, or just logging
+        // Note: 'state' property might not be public in all type definitions but exists at runtime
+        const state = (this.imap as any).state;
+        if (state && state !== 'authenticated') {
+            // specifically 'authenticated' is when we are logged in but no box selected? 
+            // Actually, when box is open, state should be 'selected'. 
+            // Let's log it to be sure.
+            console.log(`Debug: IMAP State is '${state}'`);
+        }
 
-            console.log(`Found ${results.length} unread email(s), checking filters...`);
+        console.log('Searching for unread emails...');
 
-            const fetch = this.imap.fetch(results, {
-                bodies: '',
-                markSeen: false
-            });
-
-            fetch.on('message', (msg, seqno) => {
-                msg.on('body', async (stream) => {
-                    try {
-                        const parsed = await simpleParser(stream as any);
-
-                        // Check if email matches filter
-                        if (this.matchesFilter(parsed)) {
-                            console.log(`\n✓ Email matches filter (seq: ${seqno})`);
-                            console.log(`  From: ${parsed.from?.text}`);
-                            console.log(`  Subject: ${parsed.subject}`);
-
-                            this.emit('email', {
-                                seqno,
-                                parsed,
-                                body: parsed.text || parsed.html || ''
-                            });
-                        }
-                    } catch (err) {
-                        console.error('Error parsing email:', err);
+        try {
+            this.imap.search(['UNSEEN'], (err, results) => {
+                if (err) {
+                    console.error('Search error:', err);
+                    if (err.message.includes('No mailbox is currently selected')) {
+                        console.warn('Attempting to re-open inbox...');
+                        this.isInboxOpen = false;
+                        this.openInbox().then(() => this.fetchUnreadEmails()).catch(e => console.error('Re-open failed', e));
                     }
+                    return;
+                }
+
+                if (!results || results.length === 0) {
+                    console.log('No unread emails found');
+                    return;
+                }
+
+                console.log(`Found ${results.length} unread email(s)`);
+
+                const fetch = this.imap.fetch(results, {
+                    bodies: '',
+                    markSeen: false
+                });
+
+                fetch.on('message', (msg, seqno) => {
+                    msg.on('body', async (stream) => {
+                        try {
+                            const parsed = await simpleParser(stream as any);
+
+                            if (this.matchesFilter(parsed)) {
+                                console.log(`\n✓ Email matches filter`);
+                                console.log(`  From: ${parsed.from?.text}`);
+                                console.log(`  Subject: ${parsed.subject}`);
+
+                                this.emit('email', {
+                                    seqno,
+                                    parsed,
+                                    body: parsed.text || parsed.html || ''
+                                });
+                            }
+                        } catch (err) {
+                            console.error('Error parsing email:', err);
+                        }
+                    });
+                });
+
+                fetch.once('error', (err) => {
+                    console.error('Fetch error:', err);
+                });
+
+                fetch.once('end', () => {
+                    console.log('Finished fetching emails');
                 });
             });
-
-            fetch.once('error', (err) => {
-                console.error('Fetch error:', err);
-            });
-
-            fetch.once('end', () => {
-                console.log('Finished fetching emails');
-            });
-        });
+        } catch (error) {
+            console.error('Synchronous search error:', error);
+        }
     }
 
     /**
-     * Check if email matches filter criteria
+     * Filter logic
      */
     private matchesFilter(email: ParsedMail): boolean {
-        const fromAddress = email.from?.value[0]?.address || '';
-        const subject = email.subject || '';
+        const fromAddress =
+            email.from?.value?.[0]?.address?.toLowerCase() || '';
+        const subject = (email.subject || '').toLowerCase();
 
-        const fromMatches = fromAddress.toLowerCase().includes(this.filter.from.toLowerCase());
-        const subjectMatches = subject.toLowerCase().includes(this.filter.subject.toLowerCase());
-
-        return fromMatches && subjectMatches;
+        return (
+            fromAddress.includes(this.filter.from.toLowerCase()) &&
+            subject.includes(this.filter.subject.toLowerCase())
+        );
     }
 
     /**
@@ -169,29 +214,20 @@ export class ImapService extends EventEmitter {
     markAsRead(seqno: number): Promise<void> {
         return new Promise((resolve, reject) => {
             this.imap.addFlags(seqno, ['\\Seen'], (err) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    console.log(`✓ Marked email ${seqno} as read`);
-                    resolve();
-                }
+                if (err) return reject(err);
+
+                console.log(`✓ Marked email ${seqno} as read`);
+                resolve();
             });
         });
     }
 
     /**
-     * Disconnect from IMAP server
+     * Disconnect
      */
     disconnect(): void {
         if (this.isConnected) {
             this.imap.end();
         }
-    }
-
-    /**
-     * Check if connected
-     */
-    isReady(): boolean {
-        return this.isConnected;
     }
 }

@@ -34,11 +34,14 @@ class GmailWorker {
 
             // Verify SMTP connection
             console.log('📧 Verifying SMTP connection...');
-            const smtpOk = await this.smtpService.verify();
-            if (!smtpOk) {
-                throw new Error('SMTP verification failed');
+            try {
+                await this.smtpService.verify();
+                console.log('✓ SMTP ready\n');
+            } catch (error) {
+                console.warn('⚠️ SMTP verification failed:', error);
+                console.warn('Emails may fail to send until the issue is resolved.\n');
+                console.log('Proceeding with worker startup...\n');
             }
-            console.log('');
 
             // Connect to IMAP
             console.log('📬 Connecting to IMAP server...');

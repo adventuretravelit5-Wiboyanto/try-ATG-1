@@ -45,6 +45,17 @@ export const esimConfig = {
     sandbox: process.env.ESIM_SANDBOX === 'true'
 };
 
+//OTP
+export const otpConfig = {
+    validHours: parseInt(process.env.OTP_VALIDITY_HOURS || '24')
+};
+
+// Google Sheets API Config
+export const googleSheetsConfig = {
+    sheetId: process.env.GOOGLE_SHEETS_ID || '',
+    serviceAccountPath: process.env.GOOGLE_SERVICE_ACCOUNT_JSON_PATH || ''
+};
+
 // Validate required configuration
 export function validateConfig(): void {
     const required = [
