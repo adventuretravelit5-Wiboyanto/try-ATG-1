@@ -126,17 +126,33 @@ export class ImapService extends EventEmitter {
         // Defensive check for IMAP state if accessible, or just logging
         // Note: 'state' property might not be public in all type definitions but exists at runtime
         const state = (this.imap as any).state;
-        if (state && state !== 'authenticated') {
+        if (state !== 'selected') {
+            console.warn(`IMAP state is '${state}', expected 'selected' to fetch emails.`);
+            this.isInboxOpen = false;
+            
+            this.openInbox()
+                .then(() => console.log('Re-opened inbox successfully'))
+                .catch(err => console.error('Failed to re-open inbox:', err));
+
+            return;
             // specifically 'authenticated' is when we are logged in but no box selected? 
             // Actually, when box is open, state should be 'selected'. 
             // Let's log it to be sure.
-            console.log(`Debug: IMAP State is '${state}'`);
         }
 
-        console.log('Searching for unread emails...');
-
+        console.log(`Debug: IMAP State is '${state}'`);
         try {
-            this.imap.search(['UNSEEN'], (err, results) => {
+           const criteria : any[] = ['UNSEEN'];
+           
+           if (this.filter.from) {
+            criteria.push(['FROM', this.filter.from]);
+           }
+
+           if (this.filter.subject) {
+            criteria.push(['SUBJECT', this.filter.subject]);
+           }
+
+            this.imap.search(criteria, (err, results) => {
                 if (err) {
                     console.error('Search error:', err);
                     if (err.message.includes('No mailbox is currently selected')) {

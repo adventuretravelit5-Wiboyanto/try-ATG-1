@@ -108,7 +108,7 @@ gmail-worker/
 ## 🔄 Workflow
 
 1. **Monitor Inbox**: Worker connects ke Gmail via IMAP dan monitor untuk email baru
-2. **Filter Email**: Hanya process email dari `ticket@globaltix.com` dengan subject "New Purchased Tickets"
+2. **Filter Email**: Hanya process email dari `adventuretravel.it5@gmail.com` dengan subject "New Purchased Tickets"
 3. **Parse Data**: Extract semua data penting:
    - Reference Number
    - Customer Name, Email, Mobile
