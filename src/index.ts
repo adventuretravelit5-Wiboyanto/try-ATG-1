@@ -2,19 +2,29 @@ import { ImapService } from './services/imap-service';
 import { EmailParser } from './services/email-parser';
 import { SmtpService } from './services/smtp-service';
 import { EsimService } from './services/esim-service';
-import { imapConfig, smtpConfig, emailFilter, workerConfig, esimConfig, validateConfig } from './config';
+import {
+    imapConfig,
+    smtpConfig,
+    emailFilter,
+    workerConfig,
+    esimConfig,
+    validateConfig
+} from './config';
+import { OrderRepository } from './db/order.repository';
 
 class GmailWorker {
     private imapService: ImapService;
     private emailParser: EmailParser;
     private smtpService: SmtpService;
     private esimService: EsimService;
+    private orderRepository: OrderRepository;
 
     constructor() {
         this.imapService = new ImapService(imapConfig, emailFilter);
         this.emailParser = new EmailParser();
         this.smtpService = new SmtpService(smtpConfig);
         this.esimService = new EsimService(esimConfig);
+        this.orderRepository = new OrderRepository();
     }
 
     /**
@@ -40,7 +50,6 @@ class GmailWorker {
             } catch (error) {
                 console.warn('⚠️ SMTP verification failed:', error);
                 console.warn('Emails may fail to send until the issue is resolved.\n');
-                console.log('Proceeding with worker startup...\n');
             }
 
             // Connect to IMAP
@@ -51,7 +60,7 @@ class GmailWorker {
             // Setup event handlers
             this.setupEventHandlers();
 
-            // Start monitoring
+            // Start monitoring inbox
             this.imapService.monitorInbox();
 
             console.log('='.repeat(60));
@@ -67,35 +76,34 @@ class GmailWorker {
     }
 
     /**
-     * Setup event handlers for IMAP service
+     * Setup event handlers
      */
     private setupEventHandlers(): void {
-        // Handle new email
-        this.imapService.on('email', async (data: any) => {
+        this.imapService.on('email', async (data) => {
             try {
                 await this.processEmail(data);
             } catch (error) {
-                console.error('Error processing email:', error);
+                console.error('❌ Error processing email:', error);
             }
         });
 
-        // Handle errors
         this.imapService.on('error', (error: Error) => {
             console.error('IMAP error:', error.message);
-            // Optionally implement reconnection logic here
         });
 
-        // Handle disconnection
         this.imapService.on('disconnected', () => {
-            console.log('Disconnected from IMAP server');
-            // Optionally implement reconnection logic here
+            console.warn('⚠️ IMAP disconnected');
         });
     }
 
     /**
-     * Process incoming email
+     * Main email processing pipeline
      */
-    private async processEmail(data: { seqno: number; parsed: any; body: string }): Promise<void> {
+    private async processEmail(data: {
+        seqno: number;
+        parsed: any;
+        body: string;
+    }): Promise<void> {
         const { seqno, body } = data;
 
         console.log('\n' + '='.repeat(60));
@@ -103,8 +111,10 @@ class GmailWorker {
         console.log('='.repeat(60));
 
         try {
-            // Step 1: Parse email
-            console.log('\n[1/4] Parsing email...');
+            /**
+             * STEP 1: Parse email
+             */
+            console.log('\n[1/5] Parsing email...');
             const order = this.emailParser.parseGlobalTixEmail(body);
 
             if (!order) {
@@ -115,9 +125,21 @@ class GmailWorker {
             console.log('✓ Email parsed successfully');
             console.log(this.emailParser.formatOrderSummary(order));
 
-            // Step 2: Issue eSIM
-            console.log('\n[2/4] Issuing eSIM...');
-            const esimResults = [];
+            /**
+             * STEP 2: Save order to PostgreSQL
+             */
+            console.log('\n[2/5] Saving order to database...');
+            await this.orderRepository.insertOrder(order);
+            console.log('✓ Order saved to database');
+
+            /**
+             * STEP 3: Issue eSIM
+             */
+            console.log('\n[3/5] Issuing eSIM...');
+            const esimResults: {
+                codes: string[];
+                qrCodes: string[];
+            }[] = [];
 
             for (const item of order.items) {
                 const esimResponse = await this.esimService.issueEsim({
@@ -134,27 +156,39 @@ class GmailWorker {
                         qrCodes: esimResponse.qrCodes || []
                     });
                 } else {
-                    console.error(`✗ Failed to issue eSIM for ${item.sku}:`, esimResponse.error);
+                    console.error(
+                        `✗ Failed to issue eSIM for ${item.sku}:`,
+                        esimResponse.error
+                    );
                 }
             }
 
-            // Step 3: Send email to customer
-            console.log('\n[3/4] Sending email to customer...');
-            const esimData = esimResults.length > 0 ? {
-                codes: esimResults.flatMap(r => r.codes),
-                qrCodes: esimResults.flatMap(r => r.qrCodes)
-            } : undefined;
+            /**
+             * STEP 4: Send email to customer
+             */
+            console.log('\n[4/5] Sending email to customer...');
+            const esimData = esimResults.length
+                ? {
+                      codes: esimResults.flatMap(r => r.codes),
+                      qrCodes: esimResults.flatMap(r => r.qrCodes)
+                  }
+                : undefined;
 
-            const emailSent = await this.smtpService.sendCustomerEmail(order, esimData);
+            const emailSent = await this.smtpService.sendCustomerEmail(
+                order,
+                esimData
+            );
 
             if (!emailSent) {
                 console.error('✗ Failed to send customer email');
                 return;
             }
 
-            // Step 4: Mark email as read
+            /**
+             * STEP 5: Mark email as read
+             */
             if (workerConfig.markAsRead) {
-                console.log('\n[4/4] Marking email as read...');
+                console.log('\n[5/5] Marking email as read...');
                 await this.imapService.markAsRead(seqno);
             }
 
@@ -166,12 +200,11 @@ class GmailWorker {
         } catch (error) {
             console.error('\n❌ Error processing email:', error);
             console.log('='.repeat(60));
-            console.log('');
         }
     }
 
     /**
-     * Stop the worker
+     * Graceful shutdown
      */
     stop(): void {
         console.log('\n🛑 Stopping worker...');
@@ -180,10 +213,11 @@ class GmailWorker {
     }
 }
 
-// Main execution
+/**
+ * Bootstrap
+ */
 const worker = new GmailWorker();
 
-// Handle graceful shutdown
 process.on('SIGINT', () => {
     worker.stop();
     process.exit(0);
@@ -194,7 +228,6 @@ process.on('SIGTERM', () => {
     process.exit(0);
 });
 
-// Start the worker
 worker.start().catch((error) => {
     console.error('Fatal error:', error);
     process.exit(1);

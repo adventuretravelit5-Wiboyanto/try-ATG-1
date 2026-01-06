@@ -4,10 +4,10 @@ import { ImapConfig, SmtpConfig, EmailFilter, WorkerConfig } from '../types';
 dotenv.config();
 
 export const imapConfig: ImapConfig = {
-    user: process.env.IMAP_USER || '',
-    password: process.env.IMAP_PASSWORD || '',
+    user: process.env.IMAP_USER!,
+    password: process.env.IMAP_PASSWORD!,
     host: process.env.IMAP_HOST || 'imap.gmail.com',
-    port: parseInt(process.env.IMAP_PORT || '993'),
+    port: parseInt(process.env.IMAP_PORT || '993', 10),
     tls: process.env.IMAP_TLS === 'true',
     tlsOptions: {
         rejectUnauthorized: false
@@ -16,15 +16,15 @@ export const imapConfig: ImapConfig = {
 
 export const smtpConfig: SmtpConfig = {
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT || '587'),
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
     secure: process.env.SMTP_SECURE === 'true',
     auth: {
-        user: process.env.SMTP_USER || '',
-        pass: process.env.SMTP_PASSWORD || ''
+        user: process.env.SMTP_USER!,
+        pass: process.env.SMTP_PASSWORD!
     },
     from: {
         name: process.env.SMTP_FROM_NAME || 'Global Komunika',
-        email: process.env.SMTP_FROM_EMAIL || ''
+        email: process.env.SMTP_FROM_EMAIL!
     }
 };
 
@@ -34,12 +34,17 @@ export const emailFilter: EmailFilter = {
 };
 
 export const workerConfig: WorkerConfig = {
-    checkInterval: parseInt(process.env.CHECK_INTERVAL || '30000'),
+    checkInterval: parseInt(process.env.CHECK_INTERVAL || '30000,10'),
     markAsRead: process.env.MARK_AS_READ === 'true'
 };
 
 export const esimConfig = {
-    provider: (process.env.ESIM_PROVIDER || 'mock') as 'mock' | 'airalo' | 'dataplans' | 'esim-sm' | 'esimfree',
+    provider: (process.env.ESIM_PROVIDER || 'mock') as
+    | 'mock' 
+    | 'airalo' 
+    | 'dataplans' 
+    | 'esim-sm' 
+    | 'esimfree',
     apiKey: process.env.ESIM_API_KEY,
     apiUrl: process.env.ESIM_API_URL,
     sandbox: process.env.ESIM_SANDBOX === 'true'
@@ -47,7 +52,7 @@ export const esimConfig = {
 
 //OTP
 export const otpConfig = {
-    validHours: parseInt(process.env.OTP_VALIDITY_HOURS || '24')
+    validHours: parseInt(process.env.OTP_VALIDITY_HOURS || '24', 10),
 };
 
 // Google Sheets API Config
@@ -62,12 +67,16 @@ export function validateConfig(): void {
         'IMAP_USER',
         'IMAP_PASSWORD',
         'SMTP_USER',
-        'SMTP_PASSWORD'
+        'SMTP_PASSWORD',
+        'FILTER_FROM',
+        'FILTER_SUBJECT'
     ];
 
     const missing = required.filter(key => !process.env[key]);
 
     if (missing.length > 0) {
-        throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+        throw new Error(`Missing required environment variables:\n${missing.join('\n')}`);
     }
+
+    console.log('✓ Configuration valid');
 }

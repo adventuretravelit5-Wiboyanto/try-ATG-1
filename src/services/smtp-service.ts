@@ -83,8 +83,8 @@ export class SmtpService {
         let html = template
             .replace(/\{\{customerName\}\}/g, order.customerName)
             .replace(/\{\{referenceNumber\}\}/g, order.referenceNumber)
-            .replace(/\{\{purchaseDate\}\}/g, order.purchaseDate)
-            .replace(/\{\{mobileNumber\}\}/g, order.mobileNumber);
+            .replace(/\{\{purchaseDate\}\}/g, order.purchaseDate ? order.purchaseDate.toLocaleDateString('id-ID') : '-')
+            .replace(/\{\{mobileNumber\}\}/g, order.mobileNumber ?? '-');
 
         // Generate items HTML
         const itemsHtml = order.items.map((item, idx) => `
@@ -92,7 +92,7 @@ export class SmtpService {
         <td style="padding: 12px; border-bottom: 1px solid #eee;">${idx + 1}</td>
         <td style="padding: 12px; border-bottom: 1px solid #eee;">
           <strong>${item.productName}</strong><br>
-          <small style="color: #666;">${item.variant}</small>
+          <small style="color: #666;">${item.productVariant}</small>
         </td>
         <td style="padding: 12px; border-bottom: 1px solid #eee;">${item.sku}</td>
         <td style="padding: 12px; border-bottom: 1px solid #eee;">${item.quantity}</td>

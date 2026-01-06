@@ -1,26 +1,25 @@
 export interface GlobalTixItem {
-    confirmationCode: string;
-    productName: string;
-    variant: string;
-    sku: string;
-    quantity: number;
-    unitPrice: number;
-    dateTime?: string;
-    visitDate?: string;
+  confirmationCode: string;
+  productName: string;
+  productVariant?: string;
+  sku: string;
+  visitDate?: Date;
+  quantity: number;
+  unitPrice?: number;
 }
 
 export interface GlobalTixOrder {
-    referenceNumber: string;
-    purchaseDate: string;
-    resellerName: string;
-    customerName: string;
-    customerEmail: string;
-    alternateEmail: string;
-    mobileNumber: string;
-    nric?: string;
-    remarks: string;
-    items: GlobalTixItem[];
-    paymentStatus: string;
+  referenceNumber: string;
+  purchaseDate?: Date;
+  resellerName?: string;
+  customerName: string;
+  customerEmail: string;
+  alternateEmail?: string;
+  mobileNumber?: string;
+  paymentStatus?: string;
+  
+  remarks?: string;
+  items: GlobalTixItem[];
 }
 
 export interface ImapConfig {
