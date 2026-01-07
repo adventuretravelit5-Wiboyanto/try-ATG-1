@@ -3,16 +3,17 @@ import { GlobalTixOrder } from '../types';
 
 export class OrderRepository {
 
-    /**
-     * Insert order + order_items in ONE transaction
-     */
     async insertOrder(order: GlobalTixOrder): Promise<void> {
         const client = await pool.connect();
 
         try {
             await client.query('BEGIN');
 
-            // 1️⃣ Insert order
+            /**
+             * 1️⃣ UPSERT ORDER
+             * - Jika belum ada → insert
+             * - Jika sudah ada → ambil id
+             */
             const orderResult = await client.query(
                 `
                 INSERT INTO orders (
@@ -27,33 +28,30 @@ export class OrderRepository {
                     payment_status
                 )
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-                ON CONFLICT (reference_number) DO NOTHING
+                ON CONFLICT (reference_number)
+                DO UPDATE SET
+                    updated_at = NOW()
                 RETURNING id
                 `,
                 [
                     order.referenceNumber,
-                    order.purchaseDate,
-                    order.resellerName,
+                    order.purchaseDate ?? null,
+                    order.resellerName ?? null,
                     order.customerName,
                     order.customerEmail,
-                    order.alternateEmail,
-                    order.mobileNumber,
-                    order.remarks || '',       // pastikan tidak null
-                    order.paymentStatus || null
+                    order.alternateEmail ?? null,
+                    order.mobileNumber ?? null,
+                    order.remarks ?? '',
+                    order.paymentStatus ?? null
                 ]
             );
 
-            // Kalau order sudah ada → log & return
-            if (orderResult.rowCount === 0) {
-                console.warn(`⚠️ Order ${order.referenceNumber} already exists`);
-                await client.query('ROLLBACK');
-                return;
-            }
-
             const orderId = orderResult.rows[0].id;
 
-            // 2️⃣ Insert items
-            if (order.items && order.items.length > 0) {
+            /**
+             * 2️⃣ INSERT ORDER ITEMS
+             */
+            if (order.items?.length) {
                 for (const item of order.items) {
                     await client.query(
                         `
@@ -74,22 +72,22 @@ export class OrderRepository {
                             orderId,
                             item.confirmationCode,
                             item.productName,
-                            item.productVariant,
-                            item.sku,
-                            item.visitDate || null,
-                            item.quantity,
-                            item.unitPrice
+                            item.productVariant ?? null,
+                            item.sku,                    // WAJIB ADA
+                            item.visitDate ?? null,
+                            item.quantity ?? 1,           // DEFAULT 1
+                            item.unitPrice ?? null
                         ]
                     );
                 }
             } else {
-                console.warn(`⚠️ Order ${order.referenceNumber} has 0 items`);
+                console.warn(
+                    `⚠️ Order ${order.referenceNumber} has no items`
+                );
             }
 
             await client.query('COMMIT');
-            console.log(`✅ Order ${order.referenceNumber} saved successfully`);
-
-            // 3️⃣ TODO: mark email SEEN di worker email
+            console.log(`✅ Order ${order.referenceNumber} processed`);
 
         } catch (error) {
             await client.query('ROLLBACK');
