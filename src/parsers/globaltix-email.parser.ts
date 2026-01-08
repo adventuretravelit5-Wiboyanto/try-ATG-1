@@ -2,111 +2,147 @@ import { ParsedMail } from 'mailparser';
 import * as cheerio from 'cheerio';
 import { GlobalTixOrder, GlobalTixItem } from '../types';
 
-/**
- * Helper extract dari plain text
- */
+/* ==================== HELPERS ==================== */
+
 function extract(text: string, regex: RegExp): string | undefined {
     const match = text.match(regex);
-    return match ? match[1].trim() : undefined;
+    return match?.[1]?.trim();
 }
 
-/**
- * Normalize price "IDR 1.250.000" → 1250000
- */
+function normalize(text: string): string {
+    return text.replace(/\s+/g, ' ').trim();
+}
+
 function parsePrice(raw?: string): number | undefined {
     if (!raw) return undefined;
-    return Number(raw.replace(/[^\d]/g, '')) || undefined;
+    const n = Number(raw.replace(/[^\d]/g, ''));
+    return Number.isFinite(n) ? n : undefined;
 }
 
-/**
- * Parse tanggal dengan aman
- */
 function parseDate(raw?: string): Date | undefined {
     if (!raw) return undefined;
     const d = new Date(raw);
     return isNaN(d.getTime()) ? undefined : d;
 }
 
-/**
- * Parse order items dari HTML GlobalTix
- */
+/* ==================== HTML ITEM PARSER (PRIMARY) ==================== */
+
 function extractItemsFromHtml(html: string): GlobalTixItem[] {
     const $ = cheerio.load(html);
     const items: GlobalTixItem[] = [];
+    const seen = new Set<string>();
 
-    /**
-     * Strategy:
-     * - Setiap item SELALU punya Confirmation Code
-     * - Kita split berdasarkan text block yang mengandung itu
-     */
-    $('body')
-        .find('*')
-        .each((_, el) => {
-            const blockText = $(el).text().replace(/\s+/g, ' ').trim();
+    $('body *').each((_, el) => {
+        const text = normalize($(el).text());
+        if (!/confirmation code/i.test(text)) return;
 
-            if (!blockText.includes('Confirmation Code')) return;
+        const confirmationCode =
+            text.match(/Confirmation Code\s*[:\-]?\s*([A-Z0-9]{6,})/i)?.[1] ??
+            text.match(/\b[A-Z0-9]{6,}\b/)?.[0];
 
-            const confirmationCode =
-                blockText.match(/Confirmation Code\s*[:\-]?\s*([A-Z0-9]+)/i)?.[1] ||
-                blockText.match(/\b[A-Z0-9]{6,}\b/)?.[0];
+        if (!confirmationCode || seen.has(confirmationCode)) return;
 
-            if (!confirmationCode) return;
+        const sku =
+            text.match(/WM-[A-Z0-9\-]+/)?.[0] ??
+            text.match(/SKU\s*[:\-]?\s*([A-Z0-9\-]+)/i)?.[1] ??
+            'UNKNOWN-SKU';
 
-            const productName =
-                blockText.match(/Product\s*Name\s*[:\-]?\s*(.+?)\s*(SKU|Visit|Quantity)/i)?.[1]?.trim()
-                || blockText.match(/eSIM.+?(?=SKU|Visit|Quantity)/i)?.[0]?.trim()
-                || 'Unknown Product';
+        const productName =
+            text.match(/eSIM.+?(?=WM-|SKU|Visit|Quantity|IDR)/i)?.[0]?.trim() ??
+            text.match(/Product\s*Name\s*[:\-]?\s*(.+?)(?=SKU|Visit|Quantity|IDR)/i)?.[1]?.trim() ??
+            'Unknown Product';
 
-            const sku =
-                blockText.match(/SKU\s*[:\-]?\s*([A-Z0-9\-]+)/i)?.[1] ||
-                blockText.match(/WM-[A-Z0-9\-]+/)?.[0];
+        const visitDate = parseDate(
+            text.match(/Visit Date\s*[:\-]?\s*([\w\s,]+)/i)?.[1]
+        );
 
-            const visitDate =
-                parseDate(
-                    blockText.match(/Visit Date\s*[:\-]?\s*([\w\s,]+)/i)?.[1]
-                );
+        const quantity =
+            Number(text.match(/Quantity\s*[:\-]?\s*(\d+)/i)?.[1]) || 1;
 
-            const quantity =
-                Number(
-                    blockText.match(/Quantity\s*[:\-]?\s*(\d+)/i)?.[1]
-                ) || 1;
+        const unitPrice = parsePrice(
+            text.match(/IDR\s*([\d.,]+)/i)?.[1]
+        );
 
-            const unitPrice =
-                parsePrice(
-                    blockText.match(/IDR\s*([\d.,]+)/i)?.[1]
-                );
-
-            // Hindari duplikat confirmation code
-            if (items.some(i => i.confirmationCode === confirmationCode)) {
-                return;
-            }
-
-            items.push({
-                confirmationCode,
-                productName,
-                productVariant: sku,
-                sku: sku || 'UNKNOWN-SKU',
-                visitDate,
-                quantity,
-                unitPrice
-            });
+        items.push({
+            confirmationCode,
+            productName,
+            productVariant: sku,
+            sku,
+            visitDate,
+            quantity,
+            unitPrice
         });
+
+        seen.add(confirmationCode);
+    });
 
     return items;
 }
 
-/**
- * MAIN PARSER GLOBALTIX
- */
+/* ==================== TEXT ITEM PARSER (FALLBACK) ==================== */
+
+function extractItemsFromText(text: string): GlobalTixItem[] {
+    const items: GlobalTixItem[] = [];
+    const seen = new Set<string>();
+
+    const blocks = text.split(/Confirmation Code\s*[:\-]?\s*/i).slice(1);
+
+    for (const block of blocks) {
+        const normalized = normalize(block);
+
+        const confirmationCode =
+            normalized.match(/^([A-Z0-9]{6,})/)?.[1] ??
+            normalized.match(/\b[A-Z0-9]{6,}\b/)?.[0];
+
+        if (!confirmationCode || seen.has(confirmationCode)) continue;
+
+        const sku =
+            normalized.match(/WM-[A-Z0-9\-]+/)?.[0] ??
+            normalized.match(/SKU\s*[:\-]?\s*([A-Z0-9\-]+)/i)?.[1] ??
+            'UNKNOWN-SKU';
+
+        const productName =
+            normalized.match(/eSIM.+?(?=WM-|SKU|Visit|Quantity|IDR)/i)?.[0]?.trim() ??
+            'Unknown Product';
+
+        items.push({
+            confirmationCode,
+            productName,
+            productVariant: sku,
+            sku,
+            visitDate: parseDate(
+                normalized.match(/Visit Date\s*[:\-]?\s*(.+?)(IDR|Quantity|$)/i)?.[1]
+            ),
+            quantity:
+                Number(normalized.match(/Quantity\s*[:\-]?\s*(\d+)/i)?.[1]) || 1,
+            unitPrice: parsePrice(
+                normalized.match(/IDR\s*([\d.,]+)/i)?.[1]
+            )
+        });
+
+        seen.add(confirmationCode);
+    }
+
+    return items;
+}
+
+/* ==================== MAIN PARSER (FINAL) ==================== */
+
 export function parseGlobalTixEmail(
     parsed: ParsedMail
 ): GlobalTixOrder | null {
 
-    const text = parsed.text || '';
+    const text = parsed.text ?? '';
     const html = typeof parsed.html === 'string' ? parsed.html : '';
 
-    if (!text || !html) {
-        console.warn('[parser] email missing text/html');
+    if (!text && !html) {
+        console.warn('[parser] empty email body');
+        return null;
+    }
+
+    // 🧠 VALIDASI AWAL (ANTI SALAH EMAIL)
+    const subject = parsed.subject?.toLowerCase() ?? '';
+    if (!subject.includes('ticket')) {
         return null;
     }
 
@@ -120,17 +156,16 @@ export function parseGlobalTixEmail(
         return null;
     }
 
-    const purchaseDateRaw = extract(
-        text,
-        /Purchase Date\s*[:\-]?\s*(.+)/i
-    );
+    // 🔥 HTML FIRST
+    let items = html ? extractItemsFromHtml(html) : [];
 
-    const items = extractItemsFromHtml(html);
+    // 🔄 TEXT FALLBACK
+    if (!items.length && text) {
+        items = extractItemsFromText(text);
+    }
 
     if (!items.length) {
-        console.warn(
-            `[parser] no items found for order ${referenceNumber}`
-        );
+        console.warn(`[parser] no items found for ${referenceNumber}`);
         return null;
     }
 
@@ -140,13 +175,19 @@ export function parseGlobalTixEmail(
 
     return {
         referenceNumber,
-        purchaseDate: parseDate(purchaseDateRaw),
+        purchaseDate: parseDate(
+            extract(text, /Purchase Date\s*[:\-]?\s*(.+)/i)
+        ),
         resellerName: extract(text, /Reseller Name\s*[:\-]?\s*(.+)/i),
-        customerName: extract(text, /Customer Name\s*[:\-]?\s*(.+)/i) || '',
-        customerEmail: extract(text, /Customer Email\s*[:\-]?\s*(.+)/i) || '',
+        customerName: extract(text, /Customer Name\s*[:\-]?\s*(.+)/i) ?? '',
+        customerEmail:
+            extract(text, /Customer Email\s*[:\-]?\s*(.+)/i)?.toLowerCase() ?? '',
         alternateEmail: extract(text, /Alternate Email\s*[:\-]?\s*(.+)/i),
         mobileNumber: extract(text, /Mobile Number\s*[:\-]?\s*(.+)/i),
-        paymentStatus: extract(text, /Payment Collection Status\s*[:\-]?\s*(.+)/i),
+        paymentStatus: extract(
+            text,
+            /Payment Collection Status\s*[:\-]?\s*(.+)/i
+        ),
         items
     };
 }

@@ -3,7 +3,7 @@ import { GlobalTixOrder } from '../types';
 
 export class OrderRepository {
 
-    async insertOrder(order: GlobalTixOrder): Promise<void> {
+    async insertOrder(order: GlobalTixOrder): Promise<number> {
         const client = await pool.connect();
 
         try {
@@ -11,10 +11,9 @@ export class OrderRepository {
 
             /**
              * 1️⃣ UPSERT ORDER
-             * - Jika belum ada → insert
-             * - Jika sudah ada → ambil id
+             * - Selalu dapat order_id (insert / update)
              */
-            const orderResult = await client.query(
+            const orderResult = await client.query<{ id: number }>(
                 `
                 INSERT INTO orders (
                     reference_number,
@@ -30,7 +29,15 @@ export class OrderRepository {
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
                 ON CONFLICT (reference_number)
                 DO UPDATE SET
-                    updated_at = NOW()
+                    purchase_date     = EXCLUDED.purchase_date,
+                    reseller_name     = EXCLUDED.reseller_name,
+                    customer_name     = EXCLUDED.customer_name,
+                    customer_email    = EXCLUDED.customer_email,
+                    alternative_email = EXCLUDED.alternative_email,
+                    mobile_number     = EXCLUDED.mobile_number,
+                    remarks           = EXCLUDED.remarks,
+                    payment_status    = EXCLUDED.payment_status,
+                    updated_at        = NOW()
                 RETURNING id
                 `,
                 [
@@ -46,13 +53,40 @@ export class OrderRepository {
                 ]
             );
 
+            if (!orderResult.rowCount) {
+                throw new Error(
+                    `Failed to upsert order ${order.referenceNumber}`
+                );
+            }
+
             const orderId = orderResult.rows[0].id;
 
             /**
              * 2️⃣ INSERT ORDER ITEMS
              */
-            if (order.items?.length) {
+            if (!order.items || order.items.length === 0) {
+                console.warn(
+                    `⚠️ Order ${order.referenceNumber} stored WITHOUT items`
+                );
+            } else {
                 for (const item of order.items) {
+
+                    // 🛑 VALIDASI WAJIB
+                    if (!item.confirmationCode) {
+                        console.warn(
+                            `⚠️ Skip item without confirmationCode`,
+                            item
+                        );
+                        continue;
+                    }
+
+                    if (!item.sku) {
+                        console.warn(
+                            `⚠️ Skip item ${item.confirmationCode} without SKU`
+                        );
+                        continue;
+                    }
+
                     await client.query(
                         `
                         INSERT INTO order_items (
@@ -71,27 +105,33 @@ export class OrderRepository {
                         [
                             orderId,
                             item.confirmationCode,
-                            item.productName,
+                            item.productName ?? 'Unknown Product',
                             item.productVariant ?? null,
-                            item.sku,                    // WAJIB ADA
+                            item.sku,
                             item.visitDate ?? null,
-                            item.quantity ?? 1,           // DEFAULT 1
+                            item.quantity ?? 1,
                             item.unitPrice ?? null
                         ]
                     );
                 }
-            } else {
-                console.warn(
-                    `⚠️ Order ${order.referenceNumber} has no items`
-                );
             }
 
             await client.query('COMMIT');
-            console.log(`✅ Order ${order.referenceNumber} processed`);
+
+            console.log(
+                `✅ Order ${order.referenceNumber} stored (order_id=${orderId})`
+            );
+
+            return orderId;
 
         } catch (error) {
             await client.query('ROLLBACK');
-            console.error('❌ Failed to insert order:', error);
+
+            console.error(
+                `❌ Failed to store order ${order.referenceNumber}`,
+                error
+            );
+
             throw error;
         } finally {
             client.release();

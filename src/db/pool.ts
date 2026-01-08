@@ -3,17 +3,17 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-if (!process.env.DB_HOST) {
-    throw new Error('❌ DB_HOST is not defined');
-}
-if (!process.env.DB_USER) {
-    throw new Error('❌ DB_USER is not defined');
-}
-if (!process.env.DB_PASSWORD) {
-    throw new Error('❌ DB_PASSWORD is not defined');
-}
-if (!process.env.DB_NAME) {
-    throw new Error('❌ DB_NAME is not defined');
+const requiredEnv = [
+    'DB_HOST',
+    'DB_USER',
+    'DB_PASSWORD',
+    'DB_NAME'
+] as const;
+
+for (const key of requiredEnv) {
+    if (!process.env[key]) {
+        throw new Error(`❌ ${key} is not defined`);
+    }
 }
 
 export const pool = new Pool({
@@ -27,17 +27,21 @@ export const pool = new Pool({
         ? { rejectUnauthorized: false }
         : false,
 
-    // 🔒 connection safety
-    max: 10,                     // max concurrent connections
-    idleTimeoutMillis: 30000,    // close idle clients
-    connectionTimeoutMillis: 5000
+    max: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000
 });
 
+let connected = false;
+
 pool.on('connect', () => {
-    console.log('✅ PostgreSQL pool connected');
+    if (!connected) {
+        console.log('✅ PostgreSQL pool connected');
+        connected = true;
+    }
 });
 
 pool.on('error', (err) => {
     console.error('❌ PostgreSQL pool error:', err);
-    process.exit(1); // hard fail → restart worker
+    process.exit(1);
 });

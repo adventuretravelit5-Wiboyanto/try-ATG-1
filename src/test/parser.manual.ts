@@ -1,3 +1,17 @@
+import fs from 'fs';
+import { simpleParser } from 'mailparser';
+import { parseGlobalTixEmail } from '../parsers/globaltix-email.parser';
+
+(async () => {
+  const raw = fs.readFileSync('sample-email.eml');
+  const parsed = await simpleParser(raw);
+
+  const order = parseGlobalTixEmail(parsed);
+
+  console.log(JSON.stringify(order, null, 2));
+})();
+
+
 import { EmailParser } from '../src/services/email-parser';
 import fs from 'fs';
 import path from 'path';

@@ -1,12 +1,15 @@
 import Imap from 'imap';
 import { simpleParser, ParsedMail } from 'mailparser';
 import { EventEmitter } from 'events';
-import { ImapConfig, EmailFilter } from '../types';
+import { ImapConfig, EmailFilter } from '../types/index';
 
+/**
+ * Payload event email yang dikirim ke worker
+ * HARUS sinkron dengan index.ts
+ */
 export interface ImapEmailEvent {
     seqno: number;
-    parsed: ParsedMail;
-    body: string;
+    mail: ParsedMail;
 }
 
 export class ImapService extends EventEmitter {
@@ -24,9 +27,10 @@ export class ImapService extends EventEmitter {
         this.setupEventHandlers();
     }
 
-    /**
-     * Setup all IMAP event handlers
-     */
+    /* ------------------------------------------------------------------ */
+    /* IMAP CORE EVENTS                                                    */
+    /* ------------------------------------------------------------------ */
+
     private setupEventHandlers(): void {
         this.imap.on('ready', () => {
             console.log('✓ IMAP connection ready');
@@ -54,9 +58,10 @@ export class ImapService extends EventEmitter {
         });
     }
 
-    /**
-     * Connect to IMAP server
-     */
+    /* ------------------------------------------------------------------ */
+    /* CONNECTION                                                         */
+    /* ------------------------------------------------------------------ */
+
     connect(): Promise<void> {
         return new Promise((resolve, reject) => {
             if (this.isConnected) return resolve();
@@ -69,9 +74,6 @@ export class ImapService extends EventEmitter {
         });
     }
 
-    /**
-     * Open INBOX folder
-     */
     private openInbox(): void {
         this.imap.openBox('INBOX', false, (err, box) => {
             if (err) {
@@ -88,9 +90,6 @@ export class ImapService extends EventEmitter {
         });
     }
 
-    /**
-     * Start monitoring inbox
-     */
     monitorInbox(): void {
         if (!this.isConnected || !this.isInboxOpen) {
             throw new Error('IMAP not ready. Call connect() first.');
@@ -104,9 +103,10 @@ export class ImapService extends EventEmitter {
         this.fetchUnreadEmails();
     }
 
-    /**
-     * Fetch unread emails matching filter
-     */
+    /* ------------------------------------------------------------------ */
+    /* FETCH EMAILS                                                       */
+    /* ------------------------------------------------------------------ */
+
     private fetchUnreadEmails(): void {
         if (!this.isInboxOpen || this.fetching) return;
         this.fetching = true;
@@ -146,18 +146,10 @@ export class ImapService extends EventEmitter {
                         const parsed = await simpleParser(stream as any);
 
                         if (this.matchesFilter(parsed)) {
-                            const body =
-                                parsed.text ||
-                                parsed.html ||
-                                '';
-
-                            const payload: ImapEmailEvent = {
+                            this.emit('email', {
                                 seqno,
-                                parsed,
-                                body
-                            };
-
-                            this.emit('email', payload);
+                                mail: parsed
+                            } as ImapEmailEvent);
                         }
                     } catch (error) {
                         console.error('Email parsing error:', error);
@@ -175,15 +167,19 @@ export class ImapService extends EventEmitter {
         });
     }
 
-    /**
-     * Check if email matches filter
-     */
+    /* ------------------------------------------------------------------ */
+    /* FILTER                                                             */
+    /* ------------------------------------------------------------------ */
+
     private matchesFilter(email: ParsedMail): boolean {
         const from =
             email.from?.value?.[0]?.address?.toLowerCase() || '';
         const subject = (email.subject || '').toLowerCase();
 
-        if (this.filter.from && !from.includes(this.filter.from.toLowerCase())) {
+        if (
+            this.filter.from &&
+            !from.includes(this.filter.from.toLowerCase())
+        ) {
             return false;
         }
 
@@ -197,9 +193,10 @@ export class ImapService extends EventEmitter {
         return true;
     }
 
-    /**
-     * Mark email as read
-     */
+    /* ------------------------------------------------------------------ */
+    /* ACTIONS                                                            */
+    /* ------------------------------------------------------------------ */
+
     markAsRead(seqno: number): Promise<void> {
         return new Promise((resolve, reject) => {
             this.imap.addFlags(seqno, ['\\Seen'], (err) => {
@@ -209,12 +206,11 @@ export class ImapService extends EventEmitter {
         });
     }
 
-    /**
-     * Disconnect IMAP
-     */
     disconnect(): void {
         if (this.isConnected) {
             this.imap.end();
         }
     }
 }
+
+
