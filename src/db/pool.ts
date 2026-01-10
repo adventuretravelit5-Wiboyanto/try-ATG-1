@@ -3,6 +3,9 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+/* ======================================================
+ * ENV VALIDATION
+ * ====================================================== */
 const requiredEnv = [
     'DB_HOST',
     'DB_USER',
@@ -16,9 +19,12 @@ for (const key of requiredEnv) {
     }
 }
 
+/* ======================================================
+ * POOL CONFIG
+ * ====================================================== */
 export const pool = new Pool({
     host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT || 5432),
+    port: Number(process.env.DB_PORT ?? 5432),
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
@@ -27,14 +33,19 @@ export const pool = new Pool({
         ? { rejectUnauthorized: false }
         : false,
 
-    max: 10,
+    application_name: 'gmail-worker',
+
+    max: Number(process.env.DB_POOL_MAX ?? 10),
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000
 });
 
+/* ======================================================
+ * POOL EVENTS
+ * ====================================================== */
 let connected = false;
 
-pool.on('connect', () => {
+pool.on('connect', (client) => {
     if (!connected) {
         console.log('✅ PostgreSQL pool connected');
         connected = true;
@@ -43,5 +54,18 @@ pool.on('connect', () => {
 
 pool.on('error', (err) => {
     console.error('❌ PostgreSQL pool error:', err);
-    process.exit(1);
+    // ❗ jangan exit → biarkan pool reconnect
 });
+
+/* ======================================================
+ * OPTIONAL: INITIAL PING
+ * ====================================================== */
+export async function verifyDbConnection(): Promise<void> {
+    const client = await pool.connect();
+    try {
+        await client.query('SELECT 1');
+        console.log('✅ PostgreSQL connection verified');
+    } finally {
+        client.release();
+    }
+}

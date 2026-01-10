@@ -1,11 +1,12 @@
 import Imap from 'imap';
 import { simpleParser, ParsedMail } from 'mailparser';
 import { EventEmitter } from 'events';
-import { ImapConfig, EmailFilter } from '../types/index';
+import { ImapConfig, EmailFilter } from '../types';
+import { resolve } from 'path';
+import { rejects } from 'assert';
 
 /**
- * Payload event email yang dikirim ke worker
- * HARUS sinkron dengan index.ts
+ * Payload event email
  */
 export interface ImapEmailEvent {
     seqno: number;
@@ -24,18 +25,18 @@ export class ImapService extends EventEmitter {
         super();
         this.filter = filter;
         this.imap = new Imap(config);
-        this.setupEventHandlers();
+        this.setupCoreHandlers();
     }
 
-    /* ------------------------------------------------------------------ */
-    /* IMAP CORE EVENTS                                                    */
-    /* ------------------------------------------------------------------ */
+    /* ======================================================
+     * CORE IMAP EVENTS
+     * ====================================================== */
 
-    private setupEventHandlers(): void {
+    private setupCoreHandlers(): void {
         this.imap.on('ready', () => {
-            console.log('✓ IMAP connection ready');
-            this.isConnected = true;
-            this.openInbox();
+            // NOTE:
+            // READY ≠ inbox opened
+            console.log('✓ IMAP socket connected');
         });
 
         this.imap.on('mail', (numNew) => {
@@ -44,68 +45,80 @@ export class ImapService extends EventEmitter {
         });
 
         this.imap.on('error', (err) => {
-            console.error('✗ IMAP error:', err);
+            console.error('❌ IMAP error:', err);
             this.isConnected = false;
             this.isInboxOpen = false;
             this.emit('error', err);
         });
 
         this.imap.on('end', () => {
-            console.log('IMAP connection ended');
+            console.warn('⚠️ IMAP connection ended');
             this.isConnected = false;
             this.isInboxOpen = false;
             this.emit('disconnected');
         });
+
     }
 
-    /* ------------------------------------------------------------------ */
-    /* CONNECTION                                                         */
-    /* ------------------------------------------------------------------ */
+    /* ======================================================
+     * CONNECTION FLOW (SAFE)
+     * ====================================================== */
 
-    connect(): Promise<void> {
-        return new Promise((resolve, reject) => {
-            if (this.isConnected) return resolve();
+    async connect(): Promise<void> {
+        if (this.isConnected) return;
 
-            this.once('ready', resolve);
-            this.once('error', reject);
+        console.log('📬 Connecting to IMAP server...');
 
-            console.log('Connecting to IMAP server...');
+        await new Promise<void>((resolve, reject) => {
+            this.imap.once('ready', resolve);
+            this.imap.once('error', reject);
             this.imap.connect();
         });
+
+        this.isConnected = true;
+        console.log('✓ IMAP connection ready');
+
+        await this.openInbox();
     }
 
-    private openInbox(): void {
-        this.imap.openBox('INBOX', false, (err, box) => {
-            if (err) {
-                console.error('Error opening inbox:', err);
-                return;
-            }
+    private async openInbox(): Promise<void> {
+        if (this.isInboxOpen) return;
 
-            this.isInboxOpen = true;
-            console.log(`✓ Inbox opened (${box.messages.total} messages)`);
-            this.emit('ready');
+        await new Promise<void>((resolve,reject) => {            
+            this.imap.openBox('INBOX', false, (err, box) => {
+                if (err) {
+                    console.error('❌ Failed to open INBOX:', err);
+                    return reject(err);
+                }
 
-            // Initial fetch
-            this.fetchUnreadEmails();
+                this.isInboxOpen = true;
+                console.log(`📂 INBOX opened (${box.messages.total} messages)`);
+                resolve();
+            });
         });
     }
+
+    /* ======================================================
+     * MONITOR
+     * ====================================================== */
 
     monitorInbox(): void {
         if (!this.isConnected || !this.isInboxOpen) {
-            throw new Error('IMAP not ready. Call connect() first.');
+            throw new Error('IMAP not ready. connect() must complete before monitorInbox()'                
+            );
         }
 
-        console.log('Monitoring inbox...');
+        console.log('👀 Monitoring inbox...');
         console.log(
-            `Filter → From="${this.filter.from}", Subject="${this.filter.subject}"`
+            `Filter → From="${this.filter.from}", Subject contains="${this.filter.subject}"`
         );
 
         this.fetchUnreadEmails();
     }
 
-    /* ------------------------------------------------------------------ */
-    /* FETCH EMAILS                                                       */
-    /* ------------------------------------------------------------------ */
+    /* ======================================================
+     * FETCH LOGIC
+     * ====================================================== */
 
     private fetchUnreadEmails(): void {
         if (!this.isInboxOpen || this.fetching) return;
@@ -123,7 +136,7 @@ export class ImapService extends EventEmitter {
 
         this.imap.search(criteria, (err, results) => {
             if (err) {
-                console.error('Search error:', err);
+                console.error('❌ IMAP Search error:', err);
                 this.fetching = false;
                 return;
             }
@@ -133,7 +146,7 @@ export class ImapService extends EventEmitter {
                 return;
             }
 
-            console.log(`✓ Found ${results.length} unread email(s)`);
+            console.log(`📨 Found ${results.length} unread email(s)`);
 
             const fetch = this.imap.fetch(results, {
                 bodies: '',
@@ -151,14 +164,14 @@ export class ImapService extends EventEmitter {
                                 mail: parsed
                             } as ImapEmailEvent);
                         }
-                    } catch (error) {
-                        console.error('Email parsing error:', error);
+                    } catch (err) {
+                        console.error('❌ Email parse failed:', err);
                     }
                 });
             });
 
             fetch.once('error', (err) => {
-                console.error('Fetch error:', err);
+                console.error('❌ Fetch error:', err);
             });
 
             fetch.once('end', () => {
@@ -167,9 +180,9 @@ export class ImapService extends EventEmitter {
         });
     }
 
-    /* ------------------------------------------------------------------ */
-    /* FILTER                                                             */
-    /* ------------------------------------------------------------------ */
+    /* ======================================================
+     * FILTER
+     * ====================================================== */
 
     private matchesFilter(email: ParsedMail): boolean {
         const from =
@@ -193,9 +206,9 @@ export class ImapService extends EventEmitter {
         return true;
     }
 
-    /* ------------------------------------------------------------------ */
-    /* ACTIONS                                                            */
-    /* ------------------------------------------------------------------ */
+    /* ======================================================
+     * ACTIONS
+     * ====================================================== */
 
     markAsRead(seqno: number): Promise<void> {
         return new Promise((resolve, reject) => {
@@ -208,6 +221,7 @@ export class ImapService extends EventEmitter {
 
     disconnect(): void {
         if (this.isConnected) {
+            console.log('📴 Closing IMAP connection...');
             this.imap.end();
         }
     }

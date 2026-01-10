@@ -1,14 +1,65 @@
 import { pool } from './pool';
 
+/* ======================================================
+ * TYPES (DB READ MODELS)
+ * ====================================================== */
+
+export type OrderItemRow = {
+    confirmationCode: string;
+    productName: string;
+    productVariant: string | null;
+    sku: string;
+    visitDate: Date | null;
+    quantity: number;
+    unitPrice: number | null;
+};
+
+export type OrderDetailRow = {
+    reference_number: string;
+    purchase_date: Date | null;
+    reseller_name: string | null;
+    customer_name: string;
+    customer_email: string;
+    alternative_email: string | null;
+    mobile_number: string | null;
+    remarks: string | null;
+    payment_status: string | null;
+    items: OrderItemRow[];
+};
+
+export type OrderItemDetailRow = {
+    confirmation_code: string;
+    reference_number: string;
+    purchase_date: Date | null;
+    customer_name: string;
+    customer_email: string;
+    alternative_email: string | null;
+    mobile_number: string | null;
+    remarks: string | null;
+    payment_status: string | null;
+    product_name: string;
+    product_variant: string | null;
+    sku: string;
+    visit_date: Date | null;
+    quantity: number;
+    unit_price: number | null;
+};
+
+/* ======================================================
+ * READER
+ * ====================================================== */
+
 export class OrderReader {
 
-    /* =======================================================
+    /* ======================================================
      * ORDER DETAIL
-     * 1 reference_number → 1 order + SEMUA items
-     * Dipakai untuk ORDER_DETAIL.json
-     * ======================================================= */
-    async getOrderDetailByReference(referenceNumber: string) {
-        const { rows } = await pool.query(
+     * 1 reference_number → 1 order + ALL items
+     * ====================================================== */
+    async getOrderDetailByReference(
+        referenceNumber: string
+    ): Promise<OrderDetailRow | null> {
+
+        const { rows } = await pool.query<OrderDetailRow>(
             `
             SELECT
                 o.reference_number,
@@ -20,99 +71,66 @@ export class OrderReader {
                 o.mobile_number,
                 o.remarks,
                 o.payment_status,
-                json_agg(
-                    json_build_object(
-                        'confirmationCode', i.confirmation_code,
-                        'productName', i.product_name,
-                        'productVariant', i.product_variant,
-                        'sku', i.sku,
-                        'visitDate', i.visit_date,
-                        'quantity', i.quantity,
-                        'unitPrice', i.unit_price,
-                        'jsonExported', i.json_exported
-                    )
-                    ORDER BY i.created_at
+                COALESCE(
+                    json_agg(
+                        json_build_object(
+                            'confirmationCode', i.confirmation_code,
+                            'productName', i.product_name,
+                            'productVariant', i.product_variant,
+                            'sku', i.sku,
+                            'visitDate', i.visit_date,
+                            'quantity', i.quantity,
+                            'unitPrice', i.unit_price
+                        )
+                        ORDER BY i.id
+                    ) FILTER (WHERE i.id IS NOT NULL),
+                    '[]'
                 ) AS items
             FROM orders o
-            JOIN order_items i ON i.order_id = o.id
+            LEFT JOIN order_items i ON i.order_id = o.id
             WHERE o.reference_number = $1
             GROUP BY o.id
             `,
             [referenceNumber]
         );
 
-        return rows[0] || null;
+        return rows[0] ?? null;
     }
 
-    /* =======================================================
-     * ORDER FOR EXPORT
-     * HANYA item yang BELUM json_exported
-     * Dipakai oleh JsonExportService
-     * ======================================================= */
-    async getOrderForExportByReference(referenceNumber: string) {
-        const { rows } = await pool.query(
-            `
-            SELECT
-                o.reference_number,
-                o.purchase_date,
-                o.reseller_name,
-                o.customer_name,
-                o.customer_email,
-                o.alternative_email,
-                o.mobile_number,
-                o.remarks,
-                o.payment_status,
-                json_agg(
-                    json_build_object(
-                        'confirmationCode', i.confirmation_code,
-                        'productName', i.product_name,
-                        'productVariant', i.product_variant,
-                        'sku', i.sku,
-                        'visitDate', i.visit_date,
-                        'quantity', i.quantity,
-                        'unitPrice', i.unit_price
-                    )
-                    ORDER BY i.created_at
-                ) AS items
-            FROM orders o
-            JOIN order_items i ON i.order_id = o.id
-            WHERE o.reference_number = $1
-              AND i.json_exported = false
-            GROUP BY o.id
-            `,
-            [referenceNumber]
-        );
+    /* ======================================================
+     * SINGLE ITEM
+     * 1 confirmation_code → 1 order item
+     * ====================================================== */
+    async getOrderByConfirmationCode(
+        confirmationCode: string
+    ): Promise<OrderItemDetailRow | null> {
 
-        return rows[0] || null;
-    }
-
-    /* =======================================================
-     * ORDER BY CONFIRMATION CODE
-     * 1 confirmation_code → 1 item
-     * Dipakai untuk lookup / debug
-     * ======================================================= */
-    async getOrderByConfirmationCode(confirmationCode: string) {
-        const { rows } = await pool.query(
+        const { rows } = await pool.query<OrderItemDetailRow>(
             `
             SELECT
                 i.confirmation_code,
                 o.reference_number,
+                o.purchase_date,
                 o.customer_name,
                 o.customer_email,
+                o.alternative_email,
+                o.mobile_number,
+                o.remarks,
+                o.payment_status,
                 i.product_name,
                 i.product_variant,
                 i.sku,
                 i.visit_date,
                 i.quantity,
-                i.unit_price,
-                i.json_exported
+                i.unit_price
             FROM order_items i
             JOIN orders o ON o.id = i.order_id
             WHERE i.confirmation_code = $1
+            LIMIT 1
             `,
             [confirmationCode]
         );
 
-        return rows[0] || null;
+        return rows[0] ?? null;
     }
 }

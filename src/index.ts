@@ -26,14 +26,15 @@ class GmailWorker {
         this.orderRepository = new OrderRepository();
     }
 
-    /**
-     * Initialize and start the worker
-     */
+    /* =======================================================
+     * START WORKER
+     * ======================================================= */
+
     async start(): Promise<void> {
         validateConfig();
 
-        await this.smtpService.verify().catch(() => {
-            console.warn('⚠️ SMTP not ready');
+        await this.smtpService.verify().catch(err => {
+            console.warn('⚠️ SMTP not ready:', err?.message);
         });
 
         await this.imapService.connect();
@@ -53,58 +54,70 @@ class GmailWorker {
         });
     }
 
+    /* =======================================================
+     * PROCESS EMAIL
+     * ======================================================= */
+
     private async processEmail(event: {
         seqno: number;
         mail: ParsedMail;
     }): Promise<void> {
         const { seqno, mail } = event;
 
-        console.log('📨 Processing email...');
+        console.log(`📨 Processing email (seqno=${seqno})`);
 
         try {
-            /**
-             * 1️⃣ Parse email → Order
-             */
+            /* 1️⃣ Parse email */
             const order = parseGlobalTixEmail(mail);
 
             if (!order) {
-                console.warn('⚠️ Email ignored (not GlobalTix)');
+                console.log('ℹ️ Email ignored (not GlobalTix)');
                 return;
             }
 
             if (!order.items.length) {
                 console.warn(
-                    `⚠️ Order ${order.referenceNumber} has no items, skipped`
+                    `⚠️ Order ${order.referenceNumber} has no items`
                 );
                 return;
             }
 
-            /**
-             * 2️⃣ Save to DB
-             */
-            await this.orderRepository.insertOrder(order);
+            /* 2️⃣ Save / Update order (UPSERT) */
+            await this.orderRepository.upsertOrder(order);
 
-            /**
-             * 3️⃣ Optional: Issue eSIM
-             */
+            console.log(
+                `💾 Order upserted: ${order.referenceNumber}`
+            );
+
+            /* 3️⃣ Issue eSIM (best effort per item) */
             for (const item of order.items) {
-                await this.esimService.issueEsim({
-                    sku: item.sku,
-                    quantity: item.quantity,
-                    customerName: order.customerName,
-                    customerEmail: order.customerEmail,
-                    referenceNumber: order.referenceNumber
-                });
+                try {
+                    await this.esimService.issueEsim({
+                        sku: item.sku,
+                        quantity: item.quantity,
+                        customerName: order.customerName,
+                        customerEmail: order.customerEmail,
+                        referenceNumber: order.referenceNumber
+                    });
+                } catch (err) {
+                    console.error(
+                        `❌ eSIM failed for SKU ${item.sku}:`,
+                        err
+                    );
+                }
             }
 
-            /**
-             * 4️⃣ Optional: Send confirmation email
-             */
-            await this.smtpService.sendCustomerEmail(order);
+            /* 4️⃣ Send confirmation email (non-fatal) */
+            try {
+                await this.smtpService.sendCustomerEmail(order);
+            } catch (err) {
+                console.error(
+                    `❌ Failed sending email for ${order.referenceNumber}:`,
+                    err
+                );
+            }
 
-            /**
-             * 5️⃣ Mark email as read
-             */
+            /* 5️⃣ Mark email as read */
             if (workerConfig.markAsRead) {
                 await this.imapService.markAsRead(seqno);
             }
@@ -121,18 +134,20 @@ class GmailWorker {
         }
     }
 
-    /**
-     * Graceful shutdown
-     */
+    /* =======================================================
+     * SHUTDOWN
+     * ======================================================= */
+
     stop(): void {
         console.log('🛑 Stopping Gmail Worker...');
         this.imapService.disconnect();
     }
 }
 
-/**
- * Bootstrap
- */
+/* =======================================================
+ * BOOTSTRAP
+ * ======================================================= */
+
 const worker = new GmailWorker();
 
 process.on('SIGINT', () => worker.stop());

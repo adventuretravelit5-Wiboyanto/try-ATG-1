@@ -3,17 +3,15 @@ import { GlobalTixOrder } from '../types';
 
 export class OrderRepository {
 
-    async insertOrder(order: GlobalTixOrder): Promise<number> {
+    async upsertOrder(order: GlobalTixOrder): Promise<string> {
         const client = await pool.connect();
 
         try {
             await client.query('BEGIN');
 
-            /**
-             * 1️⃣ UPSERT ORDER
-             * - Selalu dapat order_id (insert / update)
-             */
-            const orderResult = await client.query<{ id: number }>(
+            /* ==================== UPSERT ORDER ==================== */
+
+            const orderResult = await client.query<{ id: string }>(
                 `
                 INSERT INTO orders (
                     reference_number,
@@ -48,41 +46,33 @@ export class OrderRepository {
                     order.customerEmail,
                     order.alternateEmail ?? null,
                     order.mobileNumber ?? null,
-                    order.remarks ?? '',
+                    order.remarks ?? null,
                     order.paymentStatus ?? null
                 ]
             );
 
-            if (!orderResult.rowCount) {
+            if (!orderResult.rows.length) {
                 throw new Error(
-                    `Failed to upsert order ${order.referenceNumber}`
+                    `Order upsert failed: ${order.referenceNumber}`
                 );
             }
 
             const orderId = orderResult.rows[0].id;
 
-            /**
-             * 2️⃣ INSERT ORDER ITEMS
-             */
-            if (!order.items || order.items.length === 0) {
+            /* ==================== UPSERT ITEMS ==================== */
+
+            if (!order.items?.length) {
+                // intentionally no throw
                 console.warn(
-                    `⚠️ Order ${order.referenceNumber} stored WITHOUT items`
+                    `⚠️ Order ${order.referenceNumber} has no items`
                 );
             } else {
                 for (const item of order.items) {
 
-                    // 🛑 VALIDASI WAJIB
-                    if (!item.confirmationCode) {
+                    if (!item.confirmationCode || !item.sku) {
                         console.warn(
-                            `⚠️ Skip item without confirmationCode`,
+                            `⚠️ Skip invalid item`,
                             item
-                        );
-                        continue;
-                    }
-
-                    if (!item.sku) {
-                        console.warn(
-                            `⚠️ Skip item ${item.confirmationCode} without SKU`
                         );
                         continue;
                     }
@@ -100,7 +90,15 @@ export class OrderRepository {
                             unit_price
                         )
                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-                        ON CONFLICT (confirmation_code) DO NOTHING
+                        ON CONFLICT (confirmation_code)
+                        DO UPDATE SET
+                            product_name    = EXCLUDED.product_name,
+                            product_variant = EXCLUDED.product_variant,
+                            sku             = EXCLUDED.sku,
+                            visit_date      = EXCLUDED.visit_date,
+                            quantity        = EXCLUDED.quantity,
+                            unit_price      = EXCLUDED.unit_price,
+                            updated_at      = NOW()
                         `,
                         [
                             orderId,
@@ -109,7 +107,9 @@ export class OrderRepository {
                             item.productVariant ?? null,
                             item.sku,
                             item.visitDate ?? null,
-                            item.quantity ?? 1,
+                            Number.isInteger(item.quantity)
+                                ? item.quantity
+                                : 1,
                             item.unitPrice ?? null
                         ]
                     );
@@ -118,20 +118,10 @@ export class OrderRepository {
 
             await client.query('COMMIT');
 
-            console.log(
-                `✅ Order ${order.referenceNumber} stored (order_id=${orderId})`
-            );
-
             return orderId;
 
         } catch (error) {
             await client.query('ROLLBACK');
-
-            console.error(
-                `❌ Failed to store order ${order.referenceNumber}`,
-                error
-            );
-
             throw error;
         } finally {
             client.release();

@@ -2,7 +2,9 @@ import { ParsedMail } from 'mailparser';
 import * as cheerio from 'cheerio';
 import { GlobalTixOrder, GlobalTixItem } from '../types';
 
-/* ==================== HELPERS ==================== */
+/* =======================================================
+ * UTILITIES
+ * ======================================================= */
 
 function extract(text: string, regex: RegExp): string | undefined {
     const match = text.match(regex);
@@ -15,8 +17,8 @@ function normalize(text: string): string {
 
 function parsePrice(raw?: string): number | undefined {
     if (!raw) return undefined;
-    const n = Number(raw.replace(/[^\d]/g, ''));
-    return Number.isFinite(n) ? n : undefined;
+    const num = Number(raw.replace(/[^\d]/g, ''));
+    return Number.isFinite(num) ? num : undefined;
 }
 
 function parseDate(raw?: string): Date | undefined {
@@ -25,14 +27,16 @@ function parseDate(raw?: string): Date | undefined {
     return isNaN(d.getTime()) ? undefined : d;
 }
 
-/* ==================== HTML ITEM PARSER (PRIMARY) ==================== */
+/* =======================================================
+ * HTML ITEM PARSER (PRIMARY)
+ * ======================================================= */
 
 function extractItemsFromHtml(html: string): GlobalTixItem[] {
     const $ = cheerio.load(html);
     const items: GlobalTixItem[] = [];
     const seen = new Set<string>();
 
-    $('body *').each((_, el) => {
+    $('body').find('*').each((_, el) => {
         const text = normalize($(el).text());
         if (!/confirmation code/i.test(text)) return;
 
@@ -79,13 +83,17 @@ function extractItemsFromHtml(html: string): GlobalTixItem[] {
     return items;
 }
 
-/* ==================== TEXT ITEM PARSER (FALLBACK) ==================== */
+/* =======================================================
+ * TEXT ITEM PARSER (FALLBACK)
+ * ======================================================= */
 
 function extractItemsFromText(text: string): GlobalTixItem[] {
     const items: GlobalTixItem[] = [];
     const seen = new Set<string>();
 
-    const blocks = text.split(/Confirmation Code\s*[:\-]?\s*/i).slice(1);
+    const blocks = text
+        .split(/Confirmation Code\s*[:\-]?\s*/i)
+        .slice(1);
 
     for (const block of blocks) {
         const normalized = normalize(block);
@@ -126,7 +134,9 @@ function extractItemsFromText(text: string): GlobalTixItem[] {
     return items;
 }
 
-/* ==================== MAIN PARSER (FINAL) ==================== */
+/* =======================================================
+ * MAIN PARSER (FINAL ENTRY)
+ * ======================================================= */
 
 export function parseGlobalTixEmail(
     parsed: ParsedMail
@@ -140,7 +150,7 @@ export function parseGlobalTixEmail(
         return null;
     }
 
-    // 🧠 VALIDASI AWAL (ANTI SALAH EMAIL)
+    // 🔒 HARD FILTER – pastikan email benar
     const subject = parsed.subject?.toLowerCase() ?? '';
     if (!subject.includes('ticket')) {
         return null;
@@ -159,7 +169,7 @@ export function parseGlobalTixEmail(
     // 🔥 HTML FIRST
     let items = html ? extractItemsFromHtml(html) : [];
 
-    // 🔄 TEXT FALLBACK
+    // 🔁 TEXT FALLBACK
     if (!items.length && text) {
         items = extractItemsFromText(text);
     }
@@ -179,7 +189,8 @@ export function parseGlobalTixEmail(
             extract(text, /Purchase Date\s*[:\-]?\s*(.+)/i)
         ),
         resellerName: extract(text, /Reseller Name\s*[:\-]?\s*(.+)/i),
-        customerName: extract(text, /Customer Name\s*[:\-]?\s*(.+)/i) ?? '',
+        customerName:
+            extract(text, /Customer Name\s*[:\-]?\s*(.+)/i) ?? '',
         customerEmail:
             extract(text, /Customer Email\s*[:\-]?\s*(.+)/i)?.toLowerCase() ?? '',
         alternateEmail: extract(text, /Alternate Email\s*[:\-]?\s*(.+)/i),
