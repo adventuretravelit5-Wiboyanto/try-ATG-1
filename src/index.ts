@@ -1,7 +1,9 @@
-import { ImapService } from './services/imap-service';
+import { ImapService, ImapEmailEvent } from './services/imap-service';
 import { parseGlobalTixEmail } from './parsers/globaltix-email.parser';
 import { SmtpService } from './services/smtp-service';
 import { EsimService } from './services/esim-service';
+import { ThirdPartyService } from './services/third-party.service';
+
 import {
     imapConfig,
     smtpConfig,
@@ -10,143 +12,98 @@ import {
     esimConfig,
     validateConfig
 } from './config';
-import { OrderRepository } from './db/order.repository';
-import { ParsedMail } from 'mailparser';
 
 class GmailWorker {
-    private imapService: ImapService;
-    private smtpService: SmtpService;
-    private esimService: EsimService;
-    private orderRepository: OrderRepository;
+
+    private readonly imapService: ImapService;
+    private readonly smtpService: SmtpService;
+    private readonly esimService: EsimService;
+    private readonly thirdPartyService: ThirdPartyService;
+
+    private shuttingDown = false;
 
     constructor() {
+        validateConfig();
+
         this.imapService = new ImapService(imapConfig, emailFilter);
         this.smtpService = new SmtpService(smtpConfig);
         this.esimService = new EsimService(esimConfig);
-        this.orderRepository = new OrderRepository();
+
+        /* ✅ PASS CONFIG CORRECTLY */
+        this.thirdPartyService = new ThirdPartyService({
+            baseUrl: process.env.THIRD_PARTY_API_BASE_URL!,
+            apiKey: process.env.THIRD_PARTY_API_KEY!,
+            timeoutMs: 15_000
+        });
     }
 
-    /* =======================================================
-     * START WORKER
-     * ======================================================= */
-
     async start(): Promise<void> {
-        validateConfig();
-
-        await this.smtpService.verify().catch(err => {
-            console.warn('⚠️ SMTP not ready:', err?.message);
-        });
+        console.log('🚀 Gmail Worker starting (GlobalTix)');
 
         await this.imapService.connect();
         this.setupEventHandlers();
         this.imapService.monitorInbox();
 
-        console.log('✅ Gmail Worker running...');
+        console.log('✅ Gmail Worker RUNNING');
     }
 
     private setupEventHandlers(): void {
-        this.imapService.on('email', async (event) => {
-            await this.processEmail(event);
-        });
+        this.imapService.on(
+            'email',
+            (event: ImapEmailEvent) => {
+                if (this.shuttingDown) return;
 
-        this.imapService.on('error', (err) => {
-            console.error('❌ IMAP error:', err);
-        });
+                this.processEmail(event).catch(err => {
+                    console.error('❌ Email processing failed:', err);
+                });
+            }
+        );
     }
 
-    /* =======================================================
-     * PROCESS EMAIL
-     * ======================================================= */
+    private async processEmail(
+        event: ImapEmailEvent
+    ): Promise<void> {
 
-    private async processEmail(event: {
-        seqno: number;
-        mail: ParsedMail;
-    }): Promise<void> {
-        const { seqno, mail } = event;
+        const { uid, mail } = event;
+        console.log(`📨 Processing email UID=${uid}`);
 
-        console.log(`📨 Processing email (seqno=${seqno})`);
-
-        try {
-            /* 1️⃣ Parse email */
-            const order = parseGlobalTixEmail(mail);
-
-            if (!order) {
-                console.log('ℹ️ Email ignored (not GlobalTix)');
-                return;
-            }
-
-            if (!order.items.length) {
-                console.warn(
-                    `⚠️ Order ${order.referenceNumber} has no items`
-                );
-                return;
-            }
-
-            /* 2️⃣ Save / Update order (UPSERT) */
-            await this.orderRepository.upsertOrder(order);
-
-            console.log(
-                `💾 Order upserted: ${order.referenceNumber}`
-            );
-
-            /* 3️⃣ Issue eSIM (best effort per item) */
-            for (const item of order.items) {
-                try {
-                    await this.esimService.issueEsim({
-                        sku: item.sku,
-                        quantity: item.quantity,
-                        customerName: order.customerName,
-                        customerEmail: order.customerEmail,
-                        referenceNumber: order.referenceNumber
-                    });
-                } catch (err) {
-                    console.error(
-                        `❌ eSIM failed for SKU ${item.sku}:`,
-                        err
-                    );
-                }
-            }
-
-            /* 4️⃣ Send confirmation email (non-fatal) */
-            try {
-                await this.smtpService.sendCustomerEmail(order);
-            } catch (err) {
-                console.error(
-                    `❌ Failed sending email for ${order.referenceNumber}:`,
-                    err
-                );
-            }
-
-            /* 5️⃣ Mark email as read */
-            if (workerConfig.markAsRead) {
-                await this.imapService.markAsRead(seqno);
-            }
-
-            console.log(
-                `✅ Email processed (${order.referenceNumber})`
-            );
-
-        } catch (err) {
-            console.error(
-                `❌ Failed processing email seqno=${seqno}:`,
-                err
-            );
+        const order = parseGlobalTixEmail(mail);
+        if (!order) {
+            console.warn('⚠️ Not a GlobalTix email');
+            return;
         }
-    }
 
-    /* =======================================================
-     * SHUTDOWN
-     * ======================================================= */
+        /* ======================================================
+         * 🔥 PUSH TO THIRD-PARTY (IDEMPOTENT)
+         * ====================================================== */
+        for (const item of order.items) {
+            await this.thirdPartyService
+                .sendOrderByConfirmationCode(
+                    item.confirmationCode
+                );
+        }
+
+        if (workerConfig.markAsRead) {
+            await this.imapService.markAsRead(uid);
+        }
+
+        console.log(
+            `✅ DONE | reference=${order.referenceNumber}`
+        );
+    }
 
     stop(): void {
-        console.log('🛑 Stopping Gmail Worker...');
+        if (this.shuttingDown) return;
+        this.shuttingDown = true;
+
+        console.log('🛑 Shutting down worker...');
         this.imapService.disconnect();
     }
 }
 
-/* =======================================================
+/* ======================================================
  * BOOTSTRAP
- * ======================================================= */
+ * ====================================================== */
 
 const worker = new GmailWorker();
 
@@ -155,4 +112,5 @@ process.on('SIGTERM', () => worker.stop());
 
 worker.start().catch(err => {
     console.error('❌ Worker failed to start:', err);
+    process.exit(1);
 });

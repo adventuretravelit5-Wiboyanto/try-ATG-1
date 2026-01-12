@@ -1,45 +1,100 @@
-    From: GlobalTix <ticket@globaltix.com>
-To: globalkomunika.cs@gmail.com
-Subject: New Purchased Tickets WRPQG8VEGT
-Date: Thu, 1 Jan 2026 16:54:00 +0800
+From: GlobalTix <adventuretravel.it5@gmail.com>
+To: Global Komunika <order@globalkomunika.com>
+Subject: New Purchased Tickets - GlobalTix
+Date: Tue, 07 Jan 2026 10:15:00 +0700
 MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="boundary123"
+
+--boundary123
+Content-Type: text/plain; charset="UTF-8"
+
+Dear Global Komunika,
+
+You have received a new ticket purchase.
+
+Reference Number: GTIX-20260107-0001
+Purchase Date: 2026-01-07 10:14:22
+
+Customer Name: John Doe
+Customer Email: john.doe@gmail.com
+Alternative Email: john.alt@gmail.com
+Mobile Number: +628123456789
+Remarks: Please issue eSIM as soon as possible
+
+Item Details:
+1. Confirmation Code: ABC123XYZ
+   Product Name: Japan Unlimited eSIM
+   Product Variant: 7 Days Unlimited
+   SKU: ESIM-JP-7D
+   Quantity: 1
+
+2. Confirmation Code: DEF456XYZ
+   Product Name: Korea eSIM
+   Product Variant: 5 Days 10GB
+   SKU: ESIM-KR-5D
+   Quantity: 2
+
+Regards,
+GlobalTix System
+
+--boundary123
 Content-Type: text/html; charset="UTF-8"
 
 <!DOCTYPE html>
 <html>
+<head>
+  <meta charset="UTF-8">
+  <title>New Purchased Tickets</title>
+</head>
 <body>
+  <h2>New Purchased Tickets - GlobalTix</h2>
 
-<h2>New Purchase with Reference Number : <b>WRPQG8VEGT</b></h2>
+  <p><strong>Reference Number:</strong> GTIX-20260107-0001</p>
+  <p><strong>Purchase Date:</strong> 2026-01-07 10:14:22</p>
 
-<table>
-<tr><td>Purchase Date</td><td>01 Jan 2026 05:24 PM (UTC+08:00)</td></tr>
-<tr><td>Reseller Name</td><td>Tiket.com</td></tr>
-<tr><td>Customer Name</td><td>Kirania Rainasya</td></tr>
-<tr><td>Customer Email</td><td>cc.entertainment@tiket.com</td></tr>
-<tr><td>Alternate Email</td><td>todo.international@tiket.com</td></tr>
-<tr><td>Mobile Number</td><td>87701918884</td></tr>
-<tr><td>Remarks</td><td></td></tr>
-</table>
+  <h3>Customer Information</h3>
+  <ul>
+    <li><strong>Name:</strong> John Doe</li>
+    <li><strong>Email:</strong> john.doe@gmail.com</li>
+    <li><strong>Alternative Email:</strong> john.alt@gmail.com</li>
+    <li><strong>Mobile Number:</strong> +628123456789</li>
+    <li><strong>Remarks:</strong> Please issue eSIM as soon as possible</li>
+  </ul>
 
-<h3>Summary</h3>
-<ul>
-<li>1 (Per Item) - 15 Days (10GB) WM-AUNZ-15-10GB</li>
-</ul>
+  <h3>Items</h3>
+  <table border="1" cellpadding="6" cellspacing="0">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Confirmation Code</th>
+        <th>Product Name</th>
+        <th>Variant</th>
+        <th>SKU</th>
+        <th>Quantity</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>ABC123XYZ</td>
+        <td>Japan Unlimited eSIM</td>
+        <td>7 Days Unlimited</td>
+        <td>ESIM-JP-7D</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>DEF456XYZ</td>
+        <td>Korea eSIM</td>
+        <td>5 Days 10GB</td>
+        <td>ESIM-KR-5D</td>
+        <td>2</td>
+      </tr>
+    </tbody>
+  </table>
 
-<hr/>
-
-<h3>Confirmation Code</h3>
-<h2>GTMSRLOW</h2>
-
-<p>
-<b>Product:</b> eSIM Australia New Zealand | eSIM Aussie Big Data<br/>
-<b>Variant:</b> 15 Days (10GB) WM-AUNZ-15-10GB<br/>
-<b>Quantity:</b> 1<br/>
-<b>Unit Price:</b> IDR 177650.0<br/>
-<b>Visit Date:</b> 14 Jan 2026
-</p>
-
-<p>Payment Collection Status : <b>COLLECTED</b></p>
-
+  <p>Regards,<br>GlobalTix System</p>
 </body>
 </html>
+
+--boundary123--

@@ -1,7 +1,7 @@
 import { pool } from './pool';
 
 /* ======================================================
- * TYPES (DB READ MODELS)
+ * READ MODELS (DB → SERVICE)
  * ====================================================== */
 
 export type OrderItemRow = {
@@ -53,7 +53,7 @@ export class OrderReader {
 
     /* ======================================================
      * ORDER DETAIL
-     * 1 reference_number → 1 order + ALL items
+     * 1 reference_number → orders + ALL order_items
      * ====================================================== */
     async getOrderDetailByReference(
         referenceNumber: string
@@ -82,14 +82,27 @@ export class OrderReader {
                             'quantity', i.quantity,
                             'unitPrice', i.unit_price
                         )
-                        ORDER BY i.id
+                        ORDER BY i.created_at
                     ) FILTER (WHERE i.id IS NOT NULL),
                     '[]'
                 ) AS items
             FROM orders o
-            LEFT JOIN order_items i ON i.order_id = o.id
-            WHERE o.reference_number = $1
-            GROUP BY o.id
+            LEFT JOIN order_items i
+                ON i.order_id = o.id
+            WHERE
+                o.reference_number = $1
+                AND o.status = 'RECEIVED'
+            GROUP BY
+                o.id,
+                o.reference_number,
+                o.purchase_date,
+                o.reseller_name,
+                o.customer_name,
+                o.customer_email,
+                o.alternative_email,
+                o.mobile_number,
+                o.remarks,
+                o.payment_status
             `,
             [referenceNumber]
         );
@@ -99,7 +112,7 @@ export class OrderReader {
 
     /* ======================================================
      * SINGLE ITEM
-     * 1 confirmation_code → 1 order item
+     * 1 confirmation_code → 1 order_item
      * ====================================================== */
     async getOrderByConfirmationCode(
         confirmationCode: string
@@ -124,8 +137,11 @@ export class OrderReader {
                 i.quantity,
                 i.unit_price
             FROM order_items i
-            JOIN orders o ON o.id = i.order_id
-            WHERE i.confirmation_code = $1
+            JOIN orders o
+                ON o.id = i.order_id
+            WHERE
+                i.confirmation_code = $1
+                AND o.status = 'RECEIVED'
             LIMIT 1
             `,
             [confirmationCode]

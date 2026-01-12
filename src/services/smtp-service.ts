@@ -58,7 +58,7 @@ export class SmtpService {
             const mailOptions = {
                 from: `"${this.config.from.name}" <${this.config.from.email}>`,
                 to: order.customerEmail,
-                cc: order.alternateEmail || undefined,
+                cc: order.alternativeEmail || undefined,
                 subject: `eSIM Activation - Order ${order.referenceNumber}`,
                 html: htmlContent
             };

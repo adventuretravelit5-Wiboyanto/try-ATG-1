@@ -1,33 +1,125 @@
 /* ======================================================
- * GLOBALTIX DOMAIN
+ * GLOBALTIX DOMAIN (EMAIL → DOMAIN)
  * ====================================================== */
 
 export interface GlobalTixItem {
+    /** UNIQUE business key */
     confirmationCode: string;
+
     productName: string;
     productVariant?: string;
     sku: string;
 
-    visitDate?: Date;        // domain only
+    /**
+     * Parsed from email
+     * Stored as DATE in PostgreSQL
+     */
+    visitDate?: Date;
+
     quantity: number;
+
+    /**
+     * Unit price per item (optional)
+     * Stored as NUMERIC(12,2)
+     */
     unitPrice?: number;
 }
 
 export interface GlobalTixOrder {
+    /**
+     * Internal DB UUID
+     * Filled AFTER persist
+     */
+    id?: string;
+
+    /**
+     * UNIQUE per email / order
+     */
     referenceNumber: string;
 
-    purchaseDate?: Date;     // domain only
+    /**
+     * Parsed from email
+     * Stored as TIMESTAMP
+     */
+    purchaseDate?: Date;
+
     resellerName?: string;
 
     customerName: string;
     customerEmail: string;
-    alternateEmail?: string;
+    alternativeEmail?: string;
+    mobileNumber?: string;
+
+    /**
+     * Free text from email / payment info
+     * Stored as VARCHAR
+     */
+    paymentStatus?: string;
+
+    remarks?: string;
+
+    /**
+     * 1 order → N items
+     */
+    items: GlobalTixItem[];
+}
+
+/* ======================================================
+ * DATABASE LAYER (INTERNAL)
+ * ====================================================== */
+
+/**
+ * Mirrors table: orders
+ */
+export interface OrderRow {
+    id: string;
+    referenceNumber: string;
+    purchaseDate?: Date;
+
+    resellerName?: string;
+
+    customerName: string;
+    customerEmail: string;
+    alternativeEmail?: string;
     mobileNumber?: string;
 
     paymentStatus?: string;
     remarks?: string;
 
-    items: GlobalTixItem[];
+    status: string;
+
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+/**
+ * Mirrors table: order_items
+ */
+export interface OrderItemRow {
+    id: string;
+    orderId: string;
+
+    confirmationCode: string;
+
+    productName: string;
+    productVariant?: string;
+    sku: string;
+
+    visitDate?: Date;
+
+    quantity: number;
+    unitPrice?: number;
+
+    createdAt: Date;
+}
+
+/* ======================================================
+ * THIRD-PARTY PAYLOAD
+ * ====================================================== */
+
+export interface ThirdPartyOrderPayload {
+    order: OrderRow;
+    items: OrderItemRow[];
 }
 
 /* ======================================================
@@ -69,11 +161,13 @@ export interface EmailFilter {
 }
 
 export interface WorkerConfig {
+    /**
+     * Mark email as read only AFTER:
+     * - DB commit
+     * - Third-party success
+     */
     markAsRead: boolean;
 
-    /**
-     * Reserved for future polling / watchdog
-     */
     checkInterval?: number;
 }
 
