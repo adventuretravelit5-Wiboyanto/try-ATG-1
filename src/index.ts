@@ -58,6 +58,10 @@ class GmailWorker {
                 });
             }
         );
+
+        this.imapService.on('error', err => {
+            console.error('❌ IMAP error:', err);
+        });
     }
 
     private async processEmail(
@@ -74,14 +78,19 @@ class GmailWorker {
         }
 
         /* ======================================================
-         * 🔥 PUSH TO THIRD-PARTY (IDEMPOTENT)
+         * 🔥 PUSH TO THIRD-PARTY (ITEM LEVEL IDEMPOTENT)
          * ====================================================== */
+
         for (const item of order.items) {
             await this.thirdPartyService
                 .sendOrderByConfirmationCode(
                     item.confirmationCode
                 );
         }
+
+        /* ======================================================
+         * ✅ MARK EMAIL AS READ (LAST STEP)
+         * ====================================================== */
 
         if (workerConfig.markAsRead) {
             await this.imapService.markAsRead(uid);

@@ -3,7 +3,7 @@
  * ====================================================== */
 
 export interface GlobalTixItem {
-    /** UNIQUE business key */
+    /** UNIQUE business key from email */
     confirmationCode: string;
 
     productName: string;
@@ -56,6 +56,9 @@ export interface GlobalTixOrder {
      */
     paymentStatus?: string;
 
+    /**
+     * Business-level notes
+     */
     remarks?: string;
 
     /**
@@ -67,6 +70,14 @@ export interface GlobalTixOrder {
 /* ======================================================
  * DATABASE LAYER (INTERNAL)
  * ====================================================== */
+
+export type OrderStatus =
+    | 'NEW'
+    | 'PROCESSING'
+    | 'ESIM_ISSUED'
+    | 'EMAIL_SENT'
+    | 'COMPLETED'
+    | 'FAILED';
 
 /**
  * Mirrors table: orders
@@ -84,9 +95,13 @@ export interface OrderRow {
     mobileNumber?: string;
 
     paymentStatus?: string;
+
+    /**
+     * Internal system remarks
+     */
     remarks?: string;
 
-    status: string;
+    status: OrderStatus;
 
     createdAt: Date;
     updatedAt: Date;
@@ -118,8 +133,8 @@ export interface OrderItemRow {
  * ====================================================== */
 
 export interface ThirdPartyOrderPayload {
-    order: OrderRow;
-    items: OrderItemRow[];
+    readonly order: OrderRow;
+    readonly items: OrderItemRow[];
 }
 
 /* ======================================================
@@ -168,6 +183,9 @@ export interface WorkerConfig {
      */
     markAsRead: boolean;
 
+    /**
+     * Polling interval (ms)
+     */
     checkInterval?: number;
 }
 

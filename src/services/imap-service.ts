@@ -1,5 +1,6 @@
 import Imap from 'imap';
 import { simpleParser, ParsedMail } from 'mailparser';
+import { Readable } from 'stream';
 import { EventEmitter } from 'events';
 import { ImapConfig, EmailFilter } from '../types';
 
@@ -105,9 +106,7 @@ export class ImapService extends EventEmitter {
 
     monitorInbox(): void {
         if (!this.isConnected || !this.isInboxOpen) {
-            throw new Error(
-                'IMAP not ready. Call connect() first.'
-            );
+            throw new Error('IMAP not ready. Call connect() first.');
         }
 
         console.log('👀 Monitoring inbox...');
@@ -143,7 +142,7 @@ export class ImapService extends EventEmitter {
                 return;
             }
 
-            if (!uids?.length) {
+            if (!uids || uids.length === 0) {
                 this.fetching = false;
                 return;
             }
@@ -164,7 +163,9 @@ export class ImapService extends EventEmitter {
 
                 msg.on('body', async (stream) => {
                     try {
-                        const mail = await simpleParser(stream as any);
+                        const mail = await simpleParser(
+                            stream as unknown as Readable
+                        );
 
                         if (uid && this.matchesFilter(mail)) {
                             this.emit('email', {
@@ -173,7 +174,7 @@ export class ImapService extends EventEmitter {
                             } as ImapEmailEvent);
                         }
                     } catch (err) {
-                        console.error('❌ Parse error:', err);
+                        console.error('❌ Email parse error:', err);
                     }
                 });
             });

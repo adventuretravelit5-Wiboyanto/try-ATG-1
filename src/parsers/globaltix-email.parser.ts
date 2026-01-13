@@ -16,12 +16,16 @@ function extract(text: string, regex: RegExp): string | undefined {
 
 function parseDate(raw?: string): Date | undefined {
     if (!raw) return undefined;
-    const d = new Date(raw.replace(/\s+/g, ' '));
+
+    const cleaned = raw.replace(/\s+/g, ' ').trim();
+    const d = new Date(cleaned);
+
     return isNaN(d.getTime()) ? undefined : d;
 }
 
 function parsePrice(raw?: string): number | undefined {
     if (!raw) return undefined;
+
     const num = Number(raw.replace(/[^\d]/g, ''));
     return Number.isFinite(num) ? num : undefined;
 }
@@ -36,34 +40,40 @@ function extractItemsFromHtml(html: string): GlobalTixItem[] {
     const seen = new Set<string>();
 
     $('table').each((_, table) => {
-        const text = normalize($(table).text());
-
-        if (!/confirmation code/i.test(text)) return;
+        const tableText = normalize($(table).text());
+        if (!/confirmation code/i.test(tableText)) return;
 
         const confirmationCode =
-            extract(text, /Confirmation Code\s*[:\-]?\s*([A-Z0-9]+)/i) ??
-            text.match(/\b[A-Z0-9]{6,}\b/)?.[0];
+            extract(tableText, /Confirmation Code\s*[:\-]?\s*([A-Z0-9]+)/i) ??
+            tableText.match(/\b[A-Z0-9]{6,}\b/)?.[0];
 
         if (!confirmationCode || seen.has(confirmationCode)) return;
 
         const sku =
-            text.match(/WM-[A-Z0-9\-]+/)?.[0] ?? 'UNKNOWN-SKU';
+            tableText.match(/WM-[A-Z0-9\-]+/)?.[0] ?? 'UNKNOWN-SKU';
 
         const productName =
-            extract(text, /(eSIM.+?)(?:WM-|Visit Date|Quantity|IDR|$)/i) ??
-            'Unknown Product';
+            extract(
+                tableText,
+                /(eSIM.+?)(?:WM-|Visit Date|Quantity|IDR|$)/i
+            ) ?? 'Unknown Product';
 
         items.push({
             confirmationCode,
             productName,
             sku,
             visitDate: parseDate(
-                extract(text, /Visit Date\s*[:\-]?\s*(.+?)(?:Quantity|IDR|$)/i)
+                extract(
+                    tableText,
+                    /Visit Date\s*[:\-]?\s*(.+?)(?:Quantity|IDR|$)/i
+                )
             ),
             quantity:
-                Number(extract(text, /Quantity\s*[:\-]?\s*(\d+)/i)) || 1,
+                Number(
+                    extract(tableText, /Quantity\s*[:\-]?\s*(\d+)/i)
+                ) || 1,
             unitPrice: parsePrice(
-                extract(text, /IDR\s*([\d.,]+)/i)
+                extract(tableText, /IDR\s*([\d.,]+)/i)
             )
         });
 
@@ -97,14 +107,21 @@ function extractItemsFromText(text: string): GlobalTixItem[] {
         items.push({
             confirmationCode,
             productName:
-                extract(t, /(eSIM.+?)(?:WM-|Visit Date|Quantity|IDR|$)/i) ??
-                'Unknown Product',
+                extract(
+                    t,
+                    /(eSIM.+?)(?:WM-|Visit Date|Quantity|IDR|$)/i
+                ) ?? 'Unknown Product',
             sku,
             visitDate: parseDate(
-                extract(t, /Visit Date\s*[:\-]?\s*(.+?)(?:IDR|Quantity|$)/i)
+                extract(
+                    t,
+                    /Visit Date\s*[:\-]?\s*(.+?)(?:IDR|Quantity|$)/i
+                )
             ),
             quantity:
-                Number(extract(t, /Quantity\s*[:\-]?\s*(\d+)/i)) || 1,
+                Number(
+                    extract(t, /Quantity\s*[:\-]?\s*(\d+)/i)
+                ) || 1,
             unitPrice: parsePrice(
                 extract(t, /IDR\s*([\d.,]+)/i)
             )
@@ -120,9 +137,20 @@ function extractItemsFromText(text: string): GlobalTixItem[] {
  * CUSTOMER PARSER (HTML)
  * ======================================================= */
 
-function extractCustomerFromHtml(html: string) {
+interface HtmlCustomerData {
+    referenceNumber?: string;
+    purchaseDate?: string;
+    resellerName?: string;
+    customerName?: string;
+    customerEmail?: string;
+    alternativeEmail?: string;
+    mobileNumber?: string;
+    paymentStatus?: string;
+}
+
+function extractCustomerFromHtml(html: string): HtmlCustomerData {
     const $ = cheerio.load(html);
-    const data: any = {};
+    const data: HtmlCustomerData = {};
 
     $('tr').each((_, row) => {
         const cols = $(row).find('td');
@@ -135,9 +163,12 @@ function extractCustomerFromHtml(html: string) {
         else if (/Purchase Date/i.test(label)) data.purchaseDate = value;
         else if (/Reseller Name/i.test(label)) data.resellerName = value;
         else if (/Customer Name/i.test(label)) data.customerName = value;
-        else if (/Customer Email/i.test(label)) data.customerEmail = value.toLowerCase();
-        else if (/Alternative Email/i.test(label)) data.alternativeEmail = value.toLowerCase();
-        else if (/Mobile Number/i.test(label)) data.mobileNumber = value;
+        else if (/Customer Email/i.test(label))
+            data.customerEmail = value.toLowerCase();
+        else if (/Alternative Email/i.test(label))
+            data.alternativeEmail = value.toLowerCase();
+        else if (/Mobile Number/i.test(label))
+            data.mobileNumber = value;
     });
 
     data.paymentStatus =
@@ -159,12 +190,13 @@ export function parseGlobalTixEmail(
 
     if (!text && !html) return null;
 
-    /* 🔒 SAFE FILTER */
+    /* 🔒 STRICT FILTER */
     const subject = parsed.subject?.toLowerCase() ?? '';
     const from = parsed.from?.text?.toLowerCase() ?? '';
 
     if (!from.includes('globaltix')) return null;
-    if (!subject.includes('ticket')) return null;
+    if (!subject.includes('ticket') && !subject.includes('confirmation'))
+        return null;
 
     const htmlCustomer = html ? extractCustomerFromHtml(html) : {};
 
@@ -175,7 +207,9 @@ export function parseGlobalTixEmail(
     if (!referenceNumber) return null;
 
     let items = html ? extractItemsFromHtml(html) : [];
-    if (!items.length && text) items = extractItemsFromText(text);
+    if (!items.length && text)
+        items = extractItemsFromText(text);
+
     if (!items.length) return null;
 
     return {

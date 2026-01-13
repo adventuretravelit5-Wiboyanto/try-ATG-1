@@ -1,4 +1,7 @@
-unutk db kan saya sudah menjelaskan bahwa db saya seperti ini nama db "globaltix"
+untuk db kan saya sudah menjelaskan bahwa db saya seperti ini nama db "globaltix"
+
+
+untuk db kan saya sudah menjelaskan bahwa db saya seperti ini nama db "globaltix"
 
 
 * Tabel orders
@@ -46,25 +49,27 @@ CREATE TABLE order_items (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-*table
 CREATE TABLE sync_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-    confirmation_code VARCHAR(100) NOT NULL UNIQUE,
+    confirmation_code VARCHAR(100) NOT NULL,
+    reference_number  VARCHAR(100) NOT NULL,
 
-    reference_number VARCHAR(100) NOT NULL,
+    target_service VARCHAR(100) NOT NULL,
 
-    target_service VARCHAR(100) NOT NULL, -- contoh: 'third-party-service'
-
-    request_payload JSONB NOT NULL,
+    request_payload  JSONB NOT NULL,
     response_payload JSONB,
 
-    status VARCHAR(20) NOT NULL, -- SUCCESS | FAILED
-
+    status VARCHAR(20) NOT NULL CHECK (status IN ('SUCCESS', 'FAILED')),
     error_message TEXT,
 
-    attempt_count INTEGER DEFAULT 1,
+    attempt_count INTEGER NOT NULL DEFAULT 1,
 
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX uq_sync_logs_success
+ON sync_logs (confirmation_code, target_service)
+WHERE status = 'SUCCESS';
+

@@ -3,10 +3,8 @@ import {
     OrderReader,
     OrderItemDetailRow
 } from '../db/order.reader';
-import {
-    SyncLogRepository,
-    SyncStatus
-} from '../db/sync-log.repository';
+import { SyncLogRepository } from '../db/sync-log.repository';
+
 
 /* ======================================================
  * CONFIG TYPES
@@ -148,7 +146,11 @@ export class ThirdPartyService {
                 requestPayload: payload,
                 responsePayload: error?.response?.data ?? null,
                 status: 'FAILED',
-                errorMessage: error?.message
+                errorMessage:
+                    error?.response?.data
+                        ? JSON.stringify(error.response.data)
+                        : error?.message
+
             });
 
             throw error;
