@@ -6,29 +6,15 @@ dotenv.config();
 /* ======================================================
  * ENV VALIDATION
  * ====================================================== */
-const requiredEnv = [
-    'DB_HOST',
-    'DB_USER',
-    'DB_PASSWORD',
-    'DB_NAME'
-] as const;
-
-for (const key of requiredEnv) {
-    if (!process.env[key]) {
-        throw new Error(`❌ ${key} is not defined`);
-    }
+if (!process.env.DATABASE_URL) {
+    throw new Error('❌ DATABASE_URL is not defined');
 }
 
 /* ======================================================
  * POOL CONFIG
  * ====================================================== */
 export const pool = new Pool({
-    host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT ?? 5432),
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-
+    connectionString: process.env.DATABASE_URL,
     ssl: process.env.DB_SSL === 'true'
         ? { rejectUnauthorized: false }
         : false,
@@ -37,7 +23,7 @@ export const pool = new Pool({
 
     max: Number(process.env.DB_POOL_MAX ?? 10),
     idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 5_000
+    connectionTimeoutMillis: 5_000,
 });
 
 /* ======================================================
@@ -45,9 +31,11 @@ export const pool = new Pool({
  * ====================================================== */
 let connected = false;
 
-pool.on('connect', (client) => {
+pool.on('connect', async (client) => {
     if (!connected) {
+        const res = await client.query('SELECT current_database()');
         console.log('✅ PostgreSQL pool connected');
+        console.log('📦 Connected database:', res.rows[0].current_database);
         connected = true;
     }
 });

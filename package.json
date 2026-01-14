@@ -31,13 +31,15 @@
         "playwright": "^1.57.0"
     },
     "devDependencies": {
+        "@types/express": "^5.0.6",
         "@types/imap": "^0.8.40",
         "@types/mailparser": "^3.4.4",
         "@types/node": "^22.10.5",
         "@types/nodemailer": "^6.4.17",
         "@types/pg": "^8.16.0",
+        "dotenv-cli": "^11.0.0",
         "ts-node": "^10.9.2",
-        "typescript": "^5.7.2"
+        "typescript": "^5.9.3"
     },
     "directories": {
         "test": "test"

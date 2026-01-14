@@ -1,0 +1,140 @@
+From: GlobalTix <ticket@globaltix.com>
+To: globalkomunika.cs@gmail.com
+Subject: New Purchased Tickets WRPQG8VEGT
+Date: Thu, 01 Jan 2026 16:54:00 +0800
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="boundary-globaltix-001"
+
+--boundary-globaltix-001
+Content-Type: text/plain; charset=UTF-8
+
+New Purchase with Reference Number : WRPQG8VEGT
+
+Purchase Date    01 Jan 2026 05:24 PM (UTC+08:00)
+Reseller Name    Tiket.com
+Customer Name    Kirania Rainasya
+Customer Email   cc.entertainment@tiket.com
+Alternative Email  todo.international@tiket.com
+Mobile Number    87701918884
+NRIC / Passport  
+Remarks          
+
+Summary
+1 (Per Item) - 15 Days (10GB) WM-AUNZ-15-10GB
+
+Confirmation Code
+GTMSRLOW
+
+eSIM Australia New Zealand | eSIM Aussie Big Data
+15 Days (10GB) WM-AUNZ-15-10GB
+Date/Time: 14 Jan 2026
+Visit Date: 14 Jan 2026
+
+Quantity
+1
+
+Unit Price
+IDR 177650.0
+
+Payment Collection Status : COLLECTED
+
+--boundary-globaltix-001
+Content-Type: text/html; charset=UTF-8
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>New Purchased Tickets</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      color: #333;
+      font-size: 14px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    td {
+      padding: 6px 8px;
+      vertical-align: top;
+    }
+    .label {
+      font-weight: bold;
+      width: 220px;
+    }
+    .summary {
+      margin-top: 20px;
+    }
+    .box {
+      border: 1px solid #ddd;
+      padding: 16px;
+      margin-top: 16px;
+      border-radius: 4px;
+    }
+    .title {
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+
+<body>
+  <p>
+    <strong>New Purchase with Reference Number :</strong>
+    <span>WRPQG8VEGT</span>
+  </p>
+
+  <table>
+    <tr><td class="label">Purchase Date</td><td>01 Jan 2026 05:24 PM (UTC+08:00)</td></tr>
+    <tr><td class="label">Reseller Name</td><td>Tiket.com</td></tr>
+    <tr><td class="label">Customer Name</td><td>Kirania Rainasya</td></tr>
+    <tr><td class="label">Customer Email</td><td>cc.entertainment@tiket.com</td></tr>
+    <tr><td class="label">Alternative Email</td><td>todo.international@tiket.com</td></tr>
+    <tr><td class="label">Mobile Number</td><td>87701918884</td></tr>
+    <tr><td class="label">NRIC / Passport</td><td></td></tr>
+    <tr><td class="label">Remarks</td><td></td></tr>
+  </table>
+
+  <div class="summary">
+    <strong>Summary</strong>
+    <ul>
+      <li>1 (Per Item) - 15 Days (10GB) WM-AUNZ-15-10GB</li>
+    </ul>
+  </div>
+
+  <div class="box">
+    <div class="title">Confirmation Code</div>
+    <div style="font-size:18px; font-weight:bold;">GTMSRLOW</div>
+
+    <p>
+      <strong>eSIM Australia New Zealand | eSIM Aussie Big Data</strong><br />
+      15 Days (10GB) WM-AUNZ-15-10GB
+    </p>
+
+    <p>
+      <strong>Date/Time:</strong> 14 Jan 2026<br />
+      <strong>Visit Date:</strong> 14 Jan 2026
+    </p>
+
+    <table>
+      <tr>
+        <td class="label">Quantity</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td class="label">Unit Price</td>
+        <td>IDR 177650.0</td>
+      </tr>
+    </table>
+  </div>
+
+  <p style="margin-top:20px;">
+    <strong>Payment Collection Status :</strong> COLLECTED
+  </p>
+</body>
+</html>
+
+--boundary-globaltix-001--
