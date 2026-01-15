@@ -73,3 +73,58 @@ CREATE UNIQUE INDEX uq_sync_logs_success
 ON sync_logs (confirmation_code, target_service)
 WHERE status = 'SUCCESS';
 
+CREATE INDEX idx_esim_order_item
+ON esim_details (order_item_id);
+
+CREATE INDEX idx_esim_status
+ON esim_details (status);
+
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_esim_updated_at
+BEFORE UPDATE ON esim_details
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at();
+
+CREATE TABLE esim_details (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    order_item_id UUID NOT NULL
+        REFERENCES order_items(id)
+        ON DELETE CASCADE,
+
+    product_name VARCHAR(255) NOT NULL,
+
+    valid_from DATE,
+    valid_until DATE,
+
+    qr_code TEXT,
+
+    iccid VARCHAR(50) UNIQUE,
+
+    smdp_address VARCHAR(255),
+
+    activation_code VARCHAR(255),
+
+    combined_activation TEXT,
+
+    apn_name VARCHAR(100),
+    apn_username VARCHAR(100),
+    apn_password VARCHAR(100),
+
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+
+    provisioned_at TIMESTAMP,
+    activated_at TIMESTAMP,
+
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+

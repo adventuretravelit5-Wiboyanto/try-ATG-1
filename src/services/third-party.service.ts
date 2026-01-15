@@ -1,10 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
-import {
-    OrderReader,
-    OrderItemDetailRow
-} from '../db/order.reader';
+import { OrderReader, OrderItemDetailRow } from '../db/order.reader';
 import { SyncLogRepository } from '../db/sync-log.repository';
-
+import { EsimRepository } from '../db/esim.repository';
 
 /* ======================================================
  * CONFIG TYPES
@@ -17,8 +14,7 @@ export type ThirdPartyConfig = {
 };
 
 /* ======================================================
- * PAYLOAD CONTRACT
- * (LOCKED with third party)
+ * PAYLOAD CONTRACT (LOCKED)
  * ====================================================== */
 
 export type ThirdPartyOrderPayload = {
@@ -47,6 +43,24 @@ export type ThirdPartyOrderPayload = {
 };
 
 /* ======================================================
+ * RESPONSE CONTRACT (PROVISIONING)
+ * ====================================================== */
+
+export type ThirdPartyProvisioningResponse = {
+    iccid: string;
+    qr_code: string;
+    smdp_address: string;
+    activation_code: string;
+    combined_activation: string;
+
+    apn?: {
+        name?: string;
+        username?: string;
+        password?: string;
+    };
+};
+
+/* ======================================================
  * SERVICE
  * ====================================================== */
 
@@ -55,11 +69,13 @@ export class ThirdPartyService {
     private readonly http: AxiosInstance;
     private readonly orderReader: OrderReader;
     private readonly syncLogRepo: SyncLogRepository;
+    private readonly esimRepo: EsimRepository;
 
     constructor(
         config: ThirdPartyConfig,
         orderReader = new OrderReader(),
-        syncLogRepo = new SyncLogRepository()
+        syncLogRepo = new SyncLogRepository(),
+        esimRepo = new EsimRepository()
     ) {
         if (!config?.baseUrl || !config?.apiKey) {
             throw new Error(
@@ -69,6 +85,7 @@ export class ThirdPartyService {
 
         this.orderReader = orderReader;
         this.syncLogRepo = syncLogRepo;
+        this.esimRepo = esimRepo;
 
         this.http = axios.create({
             baseURL: config.baseUrl,
@@ -86,16 +103,16 @@ export class ThirdPartyService {
 
     /**
      * 🔥 CRITICAL PATH
-     * Send ONE order item by confirmation_code
+     * Send ONE order item to third party
      * - Idempotent
      * - Logged
-     * - Throw on failure
+     * - Persist provisioning result
      */
     async sendOrderByConfirmationCode(
         confirmationCode: string
     ): Promise<void> {
 
-        /* ================= PREVENT DOUBLE SEND ================= */
+        /* ========== IDEMPOTENCY CHECK ========== */
 
         const alreadySynced =
             await this.syncLogRepo.isAlreadySynced(
@@ -106,7 +123,7 @@ export class ThirdPartyService {
             return;
         }
 
-        /* ================= FETCH DATA ================= */
+        /* ========== FETCH ORDER ITEM ========== */
 
         const orderItem =
             await this.orderReader.getOrderByConfirmationCode(
@@ -122,11 +139,32 @@ export class ThirdPartyService {
         const payload =
             this.buildPayloadFromOrderItem(orderItem);
 
-        /* ================= SEND + LOG ================= */
+        /* ========== SEND TO THIRD PARTY ========== */
 
         try {
             const response =
                 await this.postOrder(payload);
+
+            /* ===== SAVE eSIM PROVISIONING RESULT ===== */
+
+            await this.esimRepo.insertProvisioning({
+                orderItemId: orderItem.confirmation_code,
+                productName: orderItem.product_name,
+
+                iccid: response.iccid,
+                qrCode: response.qr_code,
+                smdpAddress: response.smdp_address,
+                activationCode: response.activation_code,
+                combinedActivation: response.combined_activation,
+
+                apnName: response.apn?.name,
+                apnUsername: response.apn?.username,
+                apnPassword: response.apn?.password,
+
+                status: 'PROCESS'
+            });
+
+            /* ===== SYNC LOG SUCCESS ===== */
 
             await this.syncLogRepo.upsertLog({
                 confirmationCode,
@@ -138,6 +176,8 @@ export class ThirdPartyService {
             });
 
         } catch (error: any) {
+
+            /* ===== SYNC LOG FAILED ===== */
 
             await this.syncLogRepo.upsertLog({
                 confirmationCode,
@@ -158,9 +198,7 @@ export class ThirdPartyService {
     }
 
     /**
-     * 🔁 Helper
-     * Send MULTIPLE items (same order)
-     * Sequential & safe
+     * 🔁 Send multiple items sequentially
      */
     async sendMultipleByConfirmationCodes(
         confirmationCodes: string[]
@@ -172,7 +210,7 @@ export class ThirdPartyService {
     }
 
     /* ======================================================
-     * INTERNALS
+     * INTERNAL HELPERS
      * ====================================================== */
 
     private buildPayloadFromOrderItem(
@@ -211,11 +249,12 @@ export class ThirdPartyService {
 
     /**
      * 🚨 ACTUAL DELIVERY
-     * Any non-2xx → THROW
+     * 
      */
+
     private async postOrder(
         payload: ThirdPartyOrderPayload
-    ): Promise<any> {
+    ): Promise<ThirdPartyProvisioningResponse> {
 
         try {
             const response = await this.http.post(
