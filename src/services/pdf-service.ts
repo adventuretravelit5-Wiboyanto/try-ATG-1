@@ -45,7 +45,8 @@ export class PdfService {
      * ====================================================== */
 
     /**
-     * Generate PDF for ONE eSIM detail
+     * Generate PDF for ONE eSIM
+     * Only allowed when status = READY
      */
     async generatePdfByEsimId(
         esimId: string
@@ -55,8 +56,12 @@ export class PdfService {
             await this.esimRepo.findById(esimId);
 
         if (!esim) {
+            throw new Error(`eSIM not found: ${esimId}`);
+        }
+
+        if (esim.status !== 'READY') {
             throw new Error(
-                `eSIM not found: ${esimId}`
+                `PDF generation blocked. Status=${esim.status}`
             );
         }
 
@@ -87,25 +92,21 @@ export class PdfService {
         esim: any
     ): Promise<string> {
 
-        const template =
+        let template =
             await fs.readFile(this.templatePath, 'utf-8');
 
-        /**
-         * ⚠️ Simple template replace
-         * (safe, deterministic, no JS execution)
-         */
         return template
-            .replace('{{PRODUCT_NAME}}', esim.product_name ?? '-')
-            .replace('{{VALID_FROM}}', esim.valid_from ?? '-')
-            .replace('{{VALID_UNTIL}}', esim.valid_until ?? '-')
-            .replace('{{ICCID}}', esim.iccid ?? '-')
-            .replace('{{QR_CODE}}', esim.qr_code ?? '-')
-            .replace('{{SMDP_ADDRESS}}', esim.smdp_address ?? '-')
-            .replace('{{ACTIVATION_CODE}}', esim.activation_code ?? '-')
-            .replace('{{COMBINED_ACTIVATION}}', esim.combined_activation ?? '-')
-            .replace('{{APN_NAME}}', esim.apn_name ?? '-')
-            .replace('{{APN_USERNAME}}', esim.apn_username ?? '-')
-            .replace('{{APN_PASSWORD}}', esim.apn_password ?? '-');
+            .replace(/{{PRODUCT_NAME}}/g, esim.product_name ?? '-')
+            .replace(/{{VALID_FROM}}/g, esim.valid_from ?? '-')
+            .replace(/{{VALID_UNTIL}}/g, esim.valid_until ?? '-')
+            .replace(/{{ICCID}}/g, esim.iccid ?? '-')
+            .replace(/{{QR_CODE}}/g, esim.qr_code ?? '-')
+            .replace(/{{SMDP_ADDRESS}}/g, esim.smdp_address ?? '-')
+            .replace(/{{ACTIVATION_CODE}}/g, esim.activation_code ?? '-')
+            .replace(/{{COMBINED_ACTIVATION}}/g, esim.combined_activation ?? '-')
+            .replace(/{{APN_NAME}}/g, esim.apn_name ?? '-')
+            .replace(/{{APN_USERNAME}}/g, esim.apn_username ?? '-')
+            .replace(/{{APN_PASSWORD}}/g, esim.apn_password ?? '-');
     }
 
     private async generatePdf(
@@ -116,12 +117,9 @@ export class PdfService {
         let browser: Browser | null = null;
 
         try {
-            browser = await chromium.launch({
-                headless: true
-            });
+            browser = await chromium.launch({ headless: true });
 
-            const page =
-                await browser.newPage();
+            const page = await browser.newPage();
 
             await page.setContent(html, {
                 waitUntil: 'networkidle'

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>eSIM Information</title>
+
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 12px;
+            color: #222;
+            line-height: 1.5;
+        }
+
+        h1, h2, h3 {
+            margin: 0 0 8px 0;
+        }
+
+        h1 {
+            font-size: 20px;
+            margin-bottom: 16px;
+        }
+
+        h2 {
+            font-size: 15px;
+            margin-top: 24px;
+        }
+
+        h3 {
+            font-size: 13px;
+            margin-top: 16px;
+        }
+
+        .section {
+            margin-bottom: 18px;
+        }
+
+        .box {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-top: 8px;
+        }
+
+        .label {
+            font-weight: bold;
+        }
+
+        .value {
+            margin-bottom: 6px;
+        }
+
+        .qr {
+            margin-top: 8px;
+            word-break: break-all;
+            font-size: 11px;
+        }
+
+        .warning {
+            background: #fff4e5;
+            border-left: 4px solid #ff9800;
+            padding: 10px;
+            margin: 16px 0;
+            font-size: 11.5px;
+        }
+
+        .footer {
+            margin-top: 30px;
+            font-size: 11px;
+            text-align: center;
+            color: #555;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>eSIM Information & How to Use</h1>
+
+    <div class="section">
+        Your sim card with <strong>{{PRODUCT_NAME}}</strong> bundle is ready to use.
+        Please activate it before <strong>{{VALID_UNTIL}}</strong>.
+    </div>
+
+    <div class="warning">
+        <strong>CAUTION:</strong><br />
+        • If your destination country is <strong>THAILAND</strong>, scan the QR Code
+        <strong>AFTER</strong> you arrive.<br />
+        • If your destination country is <strong>CHINA</strong> or <strong>TURKEY</strong>,
+        scan the QR Code <strong>BEFORE</strong> you arrive.
+    </div>
+
+    <h2>eSIM Information</h2>
+
+    <div class="section">
+        <h3>Option 1 - Scan QR Code</h3>
+
+        <div class="box">
+            <div class="value">
+                <span class="label">QR Code:</span>
+                <div class="qr">{{QR_CODE}}</div>
+            </div>
+
+            <div class="value">
+                <span class="label">ICCID:</span>
+                {{ICCID}}
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>Option 2 - Input SM-DP+ Address & Activation Code</h3>
+
+        <div class="box">
+            <div class="value">
+                <span class="label">SM-DP+ Address:</span><br />
+                {{SMDP_ADDRESS}}
+            </div>
+
+            <div class="value">
+                <span class="label">Activation Code:</span><br />
+                {{ACTIVATION_CODE}}
+            </div>
+
+            <div class="value">
+                <span class="label">Android Combined Code (LPA):</span><br />
+                {{COMBINED_ACTIVATION}}
+            </div>
+        </div>
+    </div>
+
+    <h2>APN Settings</h2>
+
+    <div class="section">
+        <div class="box">
+            <div class="value">
+                <span class="label">APN:</span> {{APN_NAME}}
+            </div>
+            <div class="value">
+                <span class="label">Username:</span> {{APN_USERNAME}}
+            </div>
+            <div class="value">
+                <span class="label">Password:</span> {{APN_PASSWORD}}
+            </div>
+        </div>
+    </div>
+
+    <h2>Installation & Activation Guide</h2>
+
+    <div class="section">
+        <strong>Install:</strong>
+        <ul>
+            <li>iPhone: Settings → Cellular → Add Cellular Plan → Scan QR Code</li>
+            <li>Android: Settings → Connections → SIM Manager → Add Mobile Plan</li>
+        </ul>
+
+        <strong>Activate:</strong>
+        <ul>
+            <li>Enable eSIM</li>
+            <li>Set as Mobile Data</li>
+            <li>Turn on Data Roaming</li>
+        </ul>
+    </div>
+
+    <div class="footer">
+        Thank you for trusting Global Komunika.<br />
+        WhatsApp: +62 898 6454 071 | Instagram: @global.komunika<br />
+        Have a nice trip and safe flight ✈️
+    </div>
+
+</body>
+</html>

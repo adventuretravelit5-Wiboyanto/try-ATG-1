@@ -9,14 +9,25 @@ export type SyncStatus = 'SUCCESS' | 'FAILED';
 export interface SyncLogCreate {
     confirmationCode: string;
     referenceNumber: string;
-
     targetService: string;
-
-    requestPayload: any;
-    responsePayload?: any;
-
+    requestPayload: unknown;
+    responsePayload?: unknown;
     status: SyncStatus;
     errorMessage?: string;
+}
+
+export interface SyncLogRow {
+    id: string;
+    confirmation_code: string;
+    reference_number: string;
+    target_service: string;
+    request_payload: any;
+    response_payload: any;
+    status: SyncStatus;
+    error_message: string | null;
+    attempt_count: number;
+    created_at: Date;
+    updated_at: Date;
 }
 
 /* ======================================================
@@ -26,10 +37,39 @@ export interface SyncLogCreate {
 export class SyncLogRepository {
 
     /* ======================================================
-     * CREATE / UPSERT LOG
-     * - idempotent by confirmation_code
+     * CHECK SUCCESS (IDEMPOTENCY GUARD)
+     * - respects partial unique index (SUCCESS only)
+     * ====================================================== */
+    async isAlreadySynced(
+        confirmationCode: string,
+        targetService: string
+    ): Promise<boolean> {
+
+        const { rows } = await pool.query<{ exists: boolean }>(
+            `
+            SELECT EXISTS (
+                SELECT 1
+                FROM sync_logs
+                WHERE confirmation_code = $1
+                  AND target_service = $2
+                  AND status = 'SUCCESS'
+            ) AS exists
+            `,
+            [confirmationCode, targetService]
+        );
+
+        return rows[0]?.exists ?? false;
+    }
+
+    /* ======================================================
+     * UPSERT LOG
+     * RULES:
+     * - SUCCESS never overwritten
+     * - FAILED increments attempt_count
+     * - uses (confirmation_code, target_service)
      * ====================================================== */
     async upsertLog(data: SyncLogCreate): Promise<void> {
+
         await pool.query(
             `
             INSERT INTO sync_logs (
@@ -40,16 +80,21 @@ export class SyncLogRepository {
                 response_payload,
                 status,
                 error_message,
-                attempt_count
+                attempt_count,
+                created_at,
+                updated_at
             )
-            VALUES ($1,$2,$3,$4,$5,$6,$7,1)
-            ON CONFLICT (confirmation_code)
+            VALUES (
+                $1,$2,$3,$4,$5,$6,$7,1,NOW(),NOW()
+            )
+            ON CONFLICT (confirmation_code, target_service)
             DO UPDATE SET
                 response_payload = EXCLUDED.response_payload,
                 status           = EXCLUDED.status,
                 error_message    = EXCLUDED.error_message,
                 attempt_count    = sync_logs.attempt_count + 1,
                 updated_at       = NOW()
+            WHERE sync_logs.status <> 'SUCCESS'
             `,
             [
                 data.confirmationCode,
@@ -66,41 +111,59 @@ export class SyncLogRepository {
     }
 
     /* ======================================================
-     * CHECK SYNC STATUS
-     * - used to prevent double send
+     * GET FAILED LOGS
+     * - for retry worker / admin tools
      * ====================================================== */
-    async isAlreadySynced(
-        confirmationCode: string
-    ): Promise<boolean> {
-        const { rows } = await pool.query<{ status: SyncStatus }>(
-            `
-            SELECT status
-            FROM sync_logs
-            WHERE confirmation_code = $1
-            LIMIT 1
-            `,
-            [confirmationCode]
-        );
+    async getFailedLogs(
+        targetService?: string,
+        limit = 50
+    ): Promise<SyncLogRow[]> {
 
-        return rows[0]?.status === 'SUCCESS';
-    }
+        const params: any[] = [];
+        let where = `WHERE status = 'FAILED'`;
 
-    /* ======================================================
-     * GET FAILED LOGS (OPTIONAL)
-     * - for retry worker / cron
-     * ====================================================== */
-    async getFailedLogs(limit = 50) {
-        const { rows } = await pool.query(
+        if (targetService) {
+            params.push(targetService);
+            where += ` AND target_service = $${params.length}`;
+        }
+
+        params.push(limit);
+
+        const { rows } = await pool.query<SyncLogRow>(
             `
             SELECT *
             FROM sync_logs
-            WHERE status = 'FAILED'
+            ${where}
             ORDER BY updated_at ASC
-            LIMIT $1
+            LIMIT $${params.length}
             `,
-            [limit]
+            params
         );
 
         return rows;
+    }
+
+    /* ======================================================
+     * OPTIONAL: GET LAST ATTEMPT
+     * - useful for debugging / admin UI
+     * ====================================================== */
+    async findLatestAttempt(
+        confirmationCode: string,
+        targetService: string
+    ): Promise<SyncLogRow | null> {
+
+        const { rows } = await pool.query<SyncLogRow>(
+            `
+            SELECT *
+            FROM sync_logs
+            WHERE confirmation_code = $1
+              AND target_service = $2
+            ORDER BY updated_at DESC
+            LIMIT 1
+            `,
+            [confirmationCode, targetService]
+        );
+
+        return rows[0] ?? null;
     }
 }
