@@ -43,14 +43,15 @@ export interface AppEnv {
 
 function requireEnv(key: string): string {
     const value = process.env[key];
-    if (!value) {
+    if (!value || value.trim() === '') {
         throw new Error(`❌ Missing required env: ${key}`);
     }
     return value;
 }
 
 function optionalEnv(key: string): string | undefined {
-    return process.env[key];
+    const value = process.env[key];
+    return value && value.trim() !== '' ? value : undefined;
 }
 
 function parseNumber(
@@ -59,7 +60,10 @@ function parseNumber(
 ): number | undefined {
     if (!value) return fallback;
     const num = Number(value);
-    return isNaN(num) ? fallback : num;
+    if (Number.isNaN(num)) {
+        throw new Error(`❌ Invalid number env value: ${value}`);
+    }
+    return num;
 }
 
 function parseBoolean(
@@ -71,7 +75,7 @@ function parseBoolean(
 }
 
 /* ======================================================
- * LOAD & VALIDATE ENV
+ * LOAD ENV
  * ====================================================== */
 
 export const env: AppEnv = {
@@ -112,13 +116,30 @@ export const env: AppEnv = {
 };
 
 /* ======================================================
- * LOG ON BOOT
+ * VALIDATION (EXPORTED)
+ * ====================================================== */
+
+export function validateEnv(): void {
+    // Accessing env ensures required vars are loaded
+    void env;
+
+    if (!['development', 'test', 'production'].includes(env.NODE_ENV)) {
+        throw new Error(
+            `❌ Invalid NODE_ENV: ${env.NODE_ENV}`
+        );
+    }
+}
+
+/* ======================================================
+ * LOG SUMMARY
  * ====================================================== */
 
 export function logEnvSummary(): void {
-    console.log('✓ Configuration valid');
+    console.log('✓ Configuration loaded');
     console.log(`• NODE_ENV = ${env.NODE_ENV}`);
     console.log(`• IMAP_HOST = ${env.IMAP_HOST}`);
+    console.log(`• IMAP_PORT = ${env.IMAP_PORT}`);
     console.log(`• DATABASE_URL = [HIDDEN]`);
     console.log(`• THIRD_PARTY_BASE_URL = ${env.THIRD_PARTY_BASE_URL}`);
+    console.log(`• PDF_OUTPUT_DIR = ${env.PDF_OUTPUT_DIR}`);
 }

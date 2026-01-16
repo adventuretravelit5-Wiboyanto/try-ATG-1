@@ -4,6 +4,9 @@ import { pool } from './pool';
  * READ MODELS (DB → SERVICE)
  * ====================================================== */
 
+/**
+ * Order item row for aggregated order detail
+ */
 export type OrderItemRow = {
     confirmationCode: string;
     productName: string;
@@ -14,29 +17,49 @@ export type OrderItemRow = {
     unitPrice: number | null;
 };
 
+/**
+ * Full order detail (1 reference_number → many items)
+ */
 export type OrderDetailRow = {
     reference_number: string;
     purchase_date: Date | null;
     reseller_name: string | null;
+
     customer_name: string;
     customer_email: string;
     alternative_email: string | null;
     mobile_number: string | null;
+
     remarks: string | null;
     payment_status: string | null;
+
     items: OrderItemRow[];
 };
 
+/**
+ * SINGLE order item detail
+ * ⚠️ CONTRACT USED BY:
+ * - ThirdPartyService
+ * - eSIM provisioning
+ * - Workflows & scripts
+ */
 export type OrderItemDetailRow = {
+    /** UUID of order_items.id */
+    order_item_id: string;
+
     confirmation_code: string;
+
     reference_number: string;
     purchase_date: Date | null;
+
     customer_name: string;
     customer_email: string;
     alternative_email: string | null;
     mobile_number: string | null;
+
     remarks: string | null;
     payment_status: string | null;
+
     product_name: string;
     product_variant: string | null;
     sku: string;
@@ -91,7 +114,6 @@ export class OrderReader {
                 ON i.order_id = o.id
             WHERE
                 o.reference_number = $1
-                AND o.status = 'RECEIVED'
             GROUP BY
                 o.id,
                 o.reference_number,
@@ -121,7 +143,9 @@ export class OrderReader {
         const { rows } = await pool.query<OrderItemDetailRow>(
             `
             SELECT
+                i.id                AS order_item_id,
                 i.confirmation_code,
+
                 o.reference_number,
                 o.purchase_date,
                 o.customer_name,
@@ -130,6 +154,7 @@ export class OrderReader {
                 o.mobile_number,
                 o.remarks,
                 o.payment_status,
+
                 i.product_name,
                 i.product_variant,
                 i.sku,
@@ -141,7 +166,6 @@ export class OrderReader {
                 ON o.id = i.order_id
             WHERE
                 i.confirmation_code = $1
-                AND o.status = 'RECEIVED'
             LIMIT 1
             `,
             [confirmationCode]

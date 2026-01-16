@@ -10,8 +10,10 @@ export interface SyncLogCreate {
     confirmationCode: string;
     referenceNumber: string;
     targetService: string;
+
     requestPayload: unknown;
     responsePayload?: unknown;
+
     status: SyncStatus;
     errorMessage?: string;
 }
@@ -37,8 +39,8 @@ export interface SyncLogRow {
 export class SyncLogRepository {
 
     /* ======================================================
-     * CHECK SUCCESS (IDEMPOTENCY GUARD)
-     * - respects partial unique index (SUCCESS only)
+     * IDEMPOTENCY CHECK
+     * confirmation_code + target_service + SUCCESS
      * ====================================================== */
     async isAlreadySynced(
         confirmationCode: string,
@@ -58,17 +60,16 @@ export class SyncLogRepository {
             [confirmationCode, targetService]
         );
 
-        return rows[0]?.exists ?? false;
+        return rows[0]?.exists === true;
     }
 
     /* ======================================================
-     * UPSERT LOG
-     * RULES:
-     * - SUCCESS never overwritten
-     * - FAILED increments attempt_count
-     * - uses (confirmation_code, target_service)
+     * CREATE / UPSERT LOG
+     * - retry-safe
      * ====================================================== */
-    async upsertLog(data: SyncLogCreate): Promise<void> {
+    async upsertLog(
+        data: SyncLogCreate
+    ): Promise<void> {
 
         await pool.query(
             `
@@ -80,13 +81,9 @@ export class SyncLogRepository {
                 response_payload,
                 status,
                 error_message,
-                attempt_count,
-                created_at,
-                updated_at
+                attempt_count
             )
-            VALUES (
-                $1,$2,$3,$4,$5,$6,$7,1,NOW(),NOW()
-            )
+            VALUES ($1,$2,$3,$4,$5,$6,$7,1)
             ON CONFLICT (confirmation_code, target_service)
             DO UPDATE SET
                 response_payload = EXCLUDED.response_payload,
@@ -94,7 +91,6 @@ export class SyncLogRepository {
                 error_message    = EXCLUDED.error_message,
                 attempt_count    = sync_logs.attempt_count + 1,
                 updated_at       = NOW()
-            WHERE sync_logs.status <> 'SUCCESS'
             `,
             [
                 data.confirmationCode,
@@ -111,59 +107,25 @@ export class SyncLogRepository {
     }
 
     /* ======================================================
-     * GET FAILED LOGS
-     * - for retry worker / admin tools
+     * FETCH FAILED LOGS (RETRY WORKER)
      * ====================================================== */
     async getFailedLogs(
-        targetService?: string,
+        targetService: string,
         limit = 50
     ): Promise<SyncLogRow[]> {
 
-        const params: any[] = [];
-        let where = `WHERE status = 'FAILED'`;
-
-        if (targetService) {
-            params.push(targetService);
-            where += ` AND target_service = $${params.length}`;
-        }
-
-        params.push(limit);
-
         const { rows } = await pool.query<SyncLogRow>(
             `
             SELECT *
             FROM sync_logs
-            ${where}
+            WHERE target_service = $1
+              AND status = 'FAILED'
             ORDER BY updated_at ASC
-            LIMIT $${params.length}
+            LIMIT $2
             `,
-            params
+            [targetService, limit]
         );
 
         return rows;
-    }
-
-    /* ======================================================
-     * OPTIONAL: GET LAST ATTEMPT
-     * - useful for debugging / admin UI
-     * ====================================================== */
-    async findLatestAttempt(
-        confirmationCode: string,
-        targetService: string
-    ): Promise<SyncLogRow | null> {
-
-        const { rows } = await pool.query<SyncLogRow>(
-            `
-            SELECT *
-            FROM sync_logs
-            WHERE confirmation_code = $1
-              AND target_service = $2
-            ORDER BY updated_at DESC
-            LIMIT 1
-            `,
-            [confirmationCode, targetService]
-        );
-
-        return rows[0] ?? null;
     }
 }

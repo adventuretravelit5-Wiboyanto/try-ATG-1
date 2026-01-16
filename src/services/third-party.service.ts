@@ -61,6 +61,12 @@ export type ThirdPartyProvisioningResponse = {
 };
 
 /* ======================================================
+ * CONSTANT
+ * ====================================================== */
+
+const TARGET_SERVICE = 'THIRD_PARTY';
+
+/* ======================================================
  * SERVICE
  * ====================================================== */
 
@@ -103,7 +109,6 @@ export class ThirdPartyService {
 
     /**
      * 🔥 CRITICAL PATH
-     * Send ONE order item to third party
      * - Idempotent
      * - Logged
      * - Persist provisioning result
@@ -116,7 +121,8 @@ export class ThirdPartyService {
 
         const alreadySynced =
             await this.syncLogRepo.isAlreadySynced(
-                confirmationCode
+                confirmationCode,
+                TARGET_SERVICE
             );
 
         if (alreadySynced) {
@@ -148,7 +154,7 @@ export class ThirdPartyService {
             /* ===== SAVE eSIM PROVISIONING RESULT ===== */
 
             await this.esimRepo.insertProvisioning({
-                orderItemId: orderItem.confirmation_code,
+                orderItemId: orderItem.order_item_id,
                 productName: orderItem.product_name,
 
                 iccid: response.iccid,
@@ -169,7 +175,7 @@ export class ThirdPartyService {
             await this.syncLogRepo.upsertLog({
                 confirmationCode,
                 referenceNumber: payload.referenceNumber,
-                targetService: 'third-party-service',
+                targetService: TARGET_SERVICE,
                 requestPayload: payload,
                 responsePayload: response,
                 status: 'SUCCESS'
@@ -182,7 +188,7 @@ export class ThirdPartyService {
             await this.syncLogRepo.upsertLog({
                 confirmationCode,
                 referenceNumber: payload.referenceNumber,
-                targetService: 'third-party-service',
+                targetService: TARGET_SERVICE,
                 requestPayload: payload,
                 responsePayload: error?.response?.data ?? null,
                 status: 'FAILED',
@@ -190,7 +196,6 @@ export class ThirdPartyService {
                     error?.response?.data
                         ? JSON.stringify(error.response.data)
                         : error?.message
-
             });
 
             throw error;
@@ -198,7 +203,7 @@ export class ThirdPartyService {
     }
 
     /**
-     * 🔁 Send multiple items sequentially
+     * 🔁 Sequential batch send
      */
     async sendMultipleByConfirmationCodes(
         confirmationCodes: string[]
@@ -249,9 +254,7 @@ export class ThirdPartyService {
 
     /**
      * 🚨 ACTUAL DELIVERY
-     * 
      */
-
     private async postOrder(
         payload: ThirdPartyOrderPayload
     ): Promise<ThirdPartyProvisioningResponse> {

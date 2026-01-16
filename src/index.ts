@@ -13,7 +13,13 @@ import {
     validateConfig
 } from './config';
 
-class GmailWorker {
+import { env } from './config/env';
+
+/* ======================================================
+ * WORKER
+ * ====================================================== */
+
+export class GmailWorker {
 
     private readonly imapService: ImapService;
     private readonly smtpService: SmtpService;
@@ -23,19 +29,28 @@ class GmailWorker {
     private shuttingDown = false;
 
     constructor() {
+        /* ======================================================
+         * VALIDATE ENV & CONFIG
+         * ====================================================== */
         validateConfig();
 
+        /* ======================================================
+         * INIT SERVICES
+         * ====================================================== */
         this.imapService = new ImapService(imapConfig, emailFilter);
         this.smtpService = new SmtpService(smtpConfig);
         this.esimService = new EsimService(esimConfig);
 
-        /* ✅ PASS CONFIG CORRECTLY */
         this.thirdPartyService = new ThirdPartyService({
-            baseUrl: process.env.THIRD_PARTY_API_BASE_URL!,
-            apiKey: process.env.THIRD_PARTY_API_KEY!,
+            baseUrl: env.THIRD_PARTY_BASE_URL,
+            apiKey: env.THIRD_PARTY_API_KEY,
             timeoutMs: 15_000
         });
     }
+
+    /* ======================================================
+     * START WORKER
+     * ====================================================== */
 
     async start(): Promise<void> {
         console.log('🚀 Gmail Worker starting (GlobalTix)');
@@ -46,6 +61,10 @@ class GmailWorker {
 
         console.log('✅ Gmail Worker RUNNING');
     }
+
+    /* ======================================================
+     * EVENT HANDLERS
+     * ====================================================== */
 
     private setupEventHandlers(): void {
         this.imapService.on(
@@ -63,6 +82,10 @@ class GmailWorker {
             console.error('❌ IMAP error:', err);
         });
     }
+
+    /* ======================================================
+     * CORE FLOW
+     * ====================================================== */
 
     private async processEmail(
         event: ImapEmailEvent
@@ -82,10 +105,9 @@ class GmailWorker {
          * ====================================================== */
 
         for (const item of order.items) {
-            await this.thirdPartyService
-                .sendOrderByConfirmationCode(
-                    item.confirmationCode
-                );
+            await this.thirdPartyService.sendOrderByConfirmationCode(
+                item.confirmationCode
+            );
         }
 
         /* ======================================================
@@ -101,6 +123,10 @@ class GmailWorker {
         );
     }
 
+    /* ======================================================
+     * SHUTDOWN
+     * ====================================================== */
+
     stop(): void {
         if (this.shuttingDown) return;
         this.shuttingDown = true;
@@ -111,15 +137,17 @@ class GmailWorker {
 }
 
 /* ======================================================
- * BOOTSTRAP
+ * BOOTSTRAP (ONLY WHEN RUN DIRECTLY)
  * ====================================================== */
 
-const worker = new GmailWorker();
+if (require.main === module) {
+    const worker = new GmailWorker();
 
-process.on('SIGINT', () => worker.stop());
-process.on('SIGTERM', () => worker.stop());
+    process.on('SIGINT', () => worker.stop());
+    process.on('SIGTERM', () => worker.stop());
 
-worker.start().catch(err => {
-    console.error('❌ Worker failed to start:', err);
-    process.exit(1);
-});
+    worker.start().catch(err => {
+        console.error('❌ Worker failed to start:', err);
+        process.exit(1);
+    });
+}
