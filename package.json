@@ -8,7 +8,9 @@
         "dev": "ts-node src/index.ts",
         "export-json": "ts-node src/exportOrdersToJson.ts",
         "start": "node dist/index.js",
-        "watch": "tsc -w"
+        "watch": "tsc -w",
+        "confirm-otp": "ts-node scripts/confirm-otp.ts",
+        "list-otps": "ts-node scripts/list-otps.ts"
     },
     "keywords": [
         "gmail",
@@ -23,6 +25,7 @@
         "cheerio": "^1.1.2",
         "dotenv": "^16.6.1",
         "express": "^5.2.1",
+        "form-data": "^4.0.5",
         "html-to-text": "^9.0.5",
         "imap": "^0.8.17",
         "mailparser": "^3.7.1",

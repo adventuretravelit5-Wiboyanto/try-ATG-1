@@ -34,8 +34,11 @@ export interface OrderItemRow {
     quantity: number;
     unit_price?: number;
     status: OrderItemStatus;
-    customer_email?: string;
+
+    // Joined fields from orders table
     reference_number?: string;
+    customer_name?: string;
+    customer_email?: string;
 }
 
 /* ======================================================
@@ -188,7 +191,9 @@ export class OrderRepository {
             `
             SELECT
                 oi.*,
-                o.reference_number
+                o.reference_number,
+                o.customer_name,
+                o.customer_email
             FROM order_items oi
             JOIN orders o ON o.id = oi.order_id
             WHERE oi.id = $1

@@ -1,0 +1,56 @@
+"table_schema","table_name","column_name","data_type","is_nullable","column_default"
+"public","esim_details","id","uuid","NO","gen_random_uuid()"
+"public","esim_details","order_item_id","uuid","NO",NULL
+"public","esim_details","product_name","character varying","NO",NULL
+"public","esim_details","valid_from","date","YES",NULL
+"public","esim_details","valid_until","date","YES",NULL
+"public","esim_details","qr_code","text","YES",NULL
+"public","esim_details","iccid","character varying","YES",NULL
+"public","esim_details","smdp_address","character varying","YES",NULL
+"public","esim_details","activation_code","character varying","YES",NULL
+"public","esim_details","combined_activation","text","YES",NULL
+"public","esim_details","apn_name","character varying","YES",NULL
+"public","esim_details","apn_username","character varying","YES",NULL
+"public","esim_details","apn_password","character varying","YES",NULL
+"public","esim_details","status","character varying","NO","'PENDING'::character varying"
+"public","esim_details","provisioned_at","timestamp without time zone","YES",NULL
+"public","esim_details","activated_at","timestamp without time zone","YES",NULL
+"public","esim_details","created_at","timestamp without time zone","YES","now()"
+"public","esim_details","updated_at","timestamp without time zone","YES","now()"
+"public","order_items","id","uuid","NO","gen_random_uuid()"
+"public","order_items","order_id","uuid","NO",NULL
+"public","order_items","confirmation_code","character varying","NO",NULL
+"public","order_items","product_name","character varying","NO",NULL
+"public","order_items","product_variant","character varying","YES",NULL
+"public","order_items","sku","character varying","NO",NULL
+"public","order_items","visit_date","date","YES",NULL
+"public","order_items","quantity","integer","NO",NULL
+"public","order_items","unit_price","numeric","YES",NULL
+"public","order_items","created_at","timestamp without time zone","YES","now()"
+"public","orders","id","uuid","NO","gen_random_uuid()"
+"public","orders","reference_number","character varying","NO",NULL
+"public","orders","purchase_date","timestamp without time zone","YES",NULL
+"public","orders","reseller_name","character varying","YES",NULL
+"public","orders","customer_name","character varying","NO",NULL
+"public","orders","customer_email","character varying","NO",NULL
+"public","orders","alternative_email","character varying","YES",NULL
+"public","orders","mobile_number","character varying","YES",NULL
+"public","orders","remarks","text","YES",NULL
+"public","orders","payment_status","character varying","YES",NULL
+"public","orders","status","character varying","YES","'RECEIVED'::character varying"
+"public","orders","created_at","timestamp without time zone","YES","now()"
+"public","orders","updated_at","timestamp without time zone","YES","now()"
+"public","orders","retry_count","integer","NO","0"
+"public","orders","last_error","text","YES",NULL
+"public","sync_logs","id","uuid","NO","gen_random_uuid()"
+"public","sync_logs","confirmation_code","character varying","NO",NULL
+"public","sync_logs","reference_number","character varying","NO",NULL
+"public","sync_logs","taget_service","character varying","NO",NULL
+"public","sync_logs","request_payload","jsonb","NO",NULL
+"public","sync_logs","response_payload","jsonb","YES",NULL
+"public","sync_logs","status","character varying","NO",NULL
+"public","sync_logs","error_message","text","YES",NULL
+"public","sync_logs","attempt_count","integer","NO","1"
+"public","sync_logs","created_at","timestamp without time zone","NO","now()"
+"public","sync_logs","update_at","timestamp without time zone","NO","now()"
+"public","sync_logs","target_service","character varying","YES",NULL

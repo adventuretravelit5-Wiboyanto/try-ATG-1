@@ -3,10 +3,13 @@ import { OrderRepository } from '../db/order.repository';
 import { SyncLogRepository } from '../db/sync-log.repository';
 
 import { PdfService } from '../services/pdf-service';
+import { GlobalTixUploadService } from '../services/globaltix-upload.service';
+import { OTPService } from '../services/otp.service';
 import { logger } from '../utils/logger';
+import { env } from '../config/env';
 
 /* ======================================================
- * FINALIZE ORDER WORKFLOW (NO SMTP)
+ * FINALIZE ORDER WORKFLOW (WITH AUTO-UPLOAD & OTP)
  * ====================================================== */
 
 export class FinalizeOrderWorkflow {
@@ -15,8 +18,18 @@ export class FinalizeOrderWorkflow {
     private readonly orderRepo = new OrderRepository();
     private readonly syncLogRepo = new SyncLogRepository();
     private readonly pdfService = new PdfService();
+    private readonly uploadService: GlobalTixUploadService;
+    private readonly otpService = new OTPService();
 
     private readonly TARGET_SERVICE = 'GLOBALTIX_PDF';
+
+    constructor() {
+        // Initialize GlobalTix upload service
+        this.uploadService = new GlobalTixUploadService({
+            baseUrl: process.env.GLOBALTIX_UPLOAD_URL || 'https://mock-globaltix.com',
+            apiKey: process.env.GLOBALTIX_API_KEY || 'mock_api_key'
+        });
+    }
 
     /* ======================================================
      * RUN WORKFLOW
@@ -119,24 +132,77 @@ export class FinalizeOrderWorkflow {
                 );
 
             /* ----------------------------------------------
-             * SUCCESS
+             * 🆕 UPLOAD PDF TO GLOBALTIX
+             * ---------------------------------------------- */
+            logger.info('[FINALIZE] Uploading PDF to GlobalTix', {
+                confirmationCode,
+                pdfPath
+            });
+
+            const uploadResult = await this.uploadService.uploadPDF({
+                confirmationCode,
+                pdfFilePath: pdfPath,
+                customerEmail: orderItem.customer_email || 'unknown@example.com',
+                customerName: orderItem.customer_name || 'Unknown Customer'
+            });
+
+            if (!uploadResult.success) {
+                throw new Error('PDF upload failed');
+            }
+
+            logger.info('[FINALIZE] ✅ PDF uploaded successfully', {
+                confirmationCode,
+                uploadUrl: uploadResult.uploadUrl
+            });
+
+            /* ----------------------------------------------
+             * 🆕 GENERATE OTP FOR ADMIN CONFIRMATION
+             * ---------------------------------------------- */
+            const uploadOTP = await this.otpService.createUploadOTP({
+                orderId: orderItem.order_id,
+                orderItemId: esim.order_item_id,
+                confirmationCode,
+                pdfFilePath: pdfPath
+            });
+
+            logger.info('[FINALIZE] 🔐 OTP generated', {
+                confirmationCode,
+                otpCode: uploadOTP.otpCode
+            });
+
+            /* ----------------------------------------------
+             * UPDATE ESIM WITH UPLOAD INFO
+             * ---------------------------------------------- */
+            await this.esimRepo.updatePdfUploadInfo(esim.id, {
+                pdfFilePath: pdfPath,
+                pdfUploadedAt: new Date()
+            });
+
+            /* ----------------------------------------------
+             * SUCCESS LOG
              * ---------------------------------------------- */
             await this.syncLogRepo.upsertLog({
                 confirmationCode,
-                referenceNumber,
+                referenceNumber: referenceNumber || confirmationCode,
                 targetService: this.TARGET_SERVICE,
                 requestPayload: { pdfPath },
-                responsePayload: { file: pdfPath },
+                responsePayload: {
+                    file: pdfPath,
+                    uploadUrl: uploadResult.uploadUrl,
+                    uploadedAt: uploadResult.uploadedAt,
+                    otpGenerated: true
+                },
                 status: 'SUCCESS'
             });
 
-            await this.esimRepo.markAsDone(esim.id);
-            await this.orderRepo.markItemCompleted(
-                esim.order_item_id
-            );
+            /* ----------------------------------------------
+             * STATUS: PENDING_CONFIRMATION (Wait for OTP)
+             * ---------------------------------------------- */
+            await this.esimRepo.updateStatus(esim.id, 'PENDING_CONFIRMATION');
 
-            logger.info('[FINALIZE] Completed', {
-                confirmationCode
+            logger.info('[FINALIZE] ⏳ Waiting for admin OTP confirmation', {
+                confirmationCode,
+                otpCode: uploadOTP.otpCode
             });
 
         } catch (error: any) {
@@ -146,7 +212,7 @@ export class FinalizeOrderWorkflow {
              * ---------------------------------------------- */
             await this.syncLogRepo.upsertLog({
                 confirmationCode,
-                referenceNumber,
+                referenceNumber: referenceNumber || confirmationCode,
                 targetService: this.TARGET_SERVICE,
                 requestPayload: {},
                 status: 'FAILED',
@@ -155,7 +221,7 @@ export class FinalizeOrderWorkflow {
 
             await this.esimRepo.markAsFailed(esim.id);
 
-            logger.error('[FINALIZE] PDF generation failed', {
+            logger.error('[FINALIZE] PDF generation/upload failed', {
                 confirmationCode,
                 error: error?.message
             });

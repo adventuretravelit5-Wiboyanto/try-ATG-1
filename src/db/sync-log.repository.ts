@@ -62,6 +62,16 @@ export class SyncLogRepository {
         return rows[0]?.exists === true;
     }
 
+    /**
+     * Alias for isAlreadySynced (for semantic clarity)
+     */
+    async isSuccess(
+        confirmationCode: string,
+        targetService: string
+    ): Promise<boolean> {
+        return this.isAlreadySynced(confirmationCode, targetService);
+    }
+
     /* ======================================================
      * UPSERT LOG (RETRY SAFE)
      * ====================================================== */

@@ -123,8 +123,70 @@ CREATE TABLE esim_details (
     provisioned_at TIMESTAMP,
     activated_at TIMESTAMP,
 
+    -- PDF Upload tracking
+    pdf_file_path TEXT,
+    pdf_uploaded_at TIMESTAMP,
+    pdf_upload_confirmed_at TIMESTAMP,
+
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE INDEX idx_esim_order_item ON esim_details (order_item_id);
+CREATE INDEX idx_esim_status ON esim_details (status);
 
+-- =====================================================
+-- UPLOAD OTP TABLE (for admin confirmation)
+-- =====================================================
+CREATE TABLE upload_otps (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    -- Reference
+    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    order_item_id UUID NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+    confirmation_code VARCHAR(100) NOT NULL,
+
+    -- OTP details
+    otp_code VARCHAR(6) NOT NULL UNIQUE,
+    otp_expires_at TIMESTAMP NOT NULL,
+
+    -- Upload details
+    pdf_file_path TEXT NOT NULL,
+    globaltix_upload_url TEXT,
+    globaltix_response JSONB,
+
+    -- Status tracking
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+        CHECK (status IN ('PENDING', 'CONFIRMED', 'EXPIRED', 'FAILED')),
+
+    -- Admin confirmation
+    confirmed_by VARCHAR(255),
+    confirmed_at TIMESTAMP,
+
+    -- Timestamps
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_upload_otp_code ON upload_otps(otp_code);
+CREATE INDEX idx_upload_status ON upload_otps(status);
+CREATE INDEX idx_upload_confirmation_code ON upload_otps(confirmation_code);
+CREATE INDEX idx_upload_created_at ON upload_otps(created_at DESC);
+
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_esim_updated_at
+BEFORE UPDATE ON esim_details
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER trg_upload_otp_updated_at
+BEFORE UPDATE ON upload_otps
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at();

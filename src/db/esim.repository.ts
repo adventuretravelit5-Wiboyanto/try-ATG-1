@@ -8,6 +8,7 @@ export type EsimStatus =
     | 'PENDING'
     | 'PROCESS'
     | 'COMPLETED'
+    | 'PENDING_CONFIRMATION'
     | 'DONE'
     | 'FAILED';
 
@@ -207,7 +208,99 @@ export class EsimRepository {
         await pool.query(sql, [esimId]);
     }
 
-    private async updateStatus(
+    /* ======================================================
+     * NEW METHODS FOR FINALIZE WORKFLOW
+     * ====================================================== */
+
+    /**
+     * Find eSIMs ready to be finalized (COMPLETED status)
+     */
+    async findReadyForFinalize() {
+        const sql = `
+            SELECT *
+            FROM esim_details
+            WHERE status = 'COMPLETED'
+            ORDER BY updated_at
+        `;
+
+        const { rows } = await pool.query(sql);
+        return rows;
+    }
+
+    /**
+     * Lock eSIM for finalizing (prevents double processing)
+     */
+    async markAsFinalizing(esimId: string): Promise<boolean> {
+        const sql = `
+            UPDATE esim_details
+            SET status = 'PROCESS',
+                updated_at = NOW()
+            WHERE id = $1
+            AND status = 'COMPLETED'
+        `;
+
+        const result = await pool.query(sql, [esimId]);
+        return (result.rowCount || 0) > 0;
+    }
+
+    /**
+     * Mark eSIM as done (final success state)
+     */
+    async markAsDone(esimId: string): Promise<void> {
+        await this.markDone(esimId);
+    }
+
+    /**
+     * Mark eSIM as failed
+     */
+    async markAsFailed(esimId: string): Promise<void> {
+        await this.markFailed(esimId);
+    }
+
+    /**
+     * Update PDF upload information
+     */
+    async updatePdfUploadInfo(
+        esimId: string,
+        data: {
+            pdfFilePath: string;
+            pdfUploadedAt: Date;
+        }
+    ): Promise<void> {
+        const sql = `
+            UPDATE esim_details
+            SET pdf_file_path = $2,
+                pdf_uploaded_at = $3,
+                updated_at = NOW()
+            WHERE id = $1
+        `;
+
+        await pool.query(sql, [
+            esimId,
+            data.pdfFilePath,
+            data.pdfUploadedAt
+        ]);
+    }
+
+    /**
+     * Mark PDF upload as confirmed by admin
+     */
+    async confirmPdfUpload(esimId: string): Promise<void> {
+        const sql = `
+            UPDATE esim_details
+            SET status = 'DONE',
+                pdf_upload_confirmed_at = NOW(),
+                updated_at = NOW()
+            WHERE id = $1
+        `;
+
+        await pool.query(sql, [esimId]);
+    }
+
+    /**
+     * Make updateStatus public for workflow needs
+     */
+    async updateStatus(
         esimId: string,
         status: EsimStatus
     ): Promise<void> {
