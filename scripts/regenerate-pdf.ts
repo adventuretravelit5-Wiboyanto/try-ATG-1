@@ -87,10 +87,7 @@ async function regeneratePdf(): Promise<void> {
                 iccid: esim.iccid
             });
 
-            await pdfService.generatePdfByEsimId(
-                esim.id,
-                { force: true } // 🔥 overwrite existing PDF
-            );
+            await generatePdfByEsimId(esim);
 
             logger.info('[REGENERATE PDF] Success', {
                 esimId: esim.id

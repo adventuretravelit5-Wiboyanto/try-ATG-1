@@ -9,16 +9,18 @@ import 'dotenv/config';
  * ====================================================== */
 
 export type NodeEnv = 'development' | 'test' | 'production';
+export type WorkerMode = 'PDF' | 'GMAIL';
 
 export interface AppEnv {
     NODE_ENV: NodeEnv;
+    WORKER_MODE: WorkerMode;
 
-    /* ================= IMAP ================= */
-    IMAP_HOST: string;
-    IMAP_PORT: number;
-    IMAP_USER: string;
-    IMAP_PASS: string;
-    IMAP_TLS: boolean;
+    /* ================= IMAP (OPTIONAL) ================= */
+    IMAP_HOST?: string;
+    IMAP_PORT?: number;
+    IMAP_USER?: string;
+    IMAP_PASS?: string;
+    IMAP_TLS?: boolean;
 
     /* ================= DATABASE ================= */
     DATABASE_URL: string;
@@ -27,18 +29,12 @@ export interface AppEnv {
     THIRD_PARTY_BASE_URL: string;
     THIRD_PARTY_API_KEY: string;
 
-    /* ================= SMTP (OPTIONAL) ================= */
-    // SMTP_HOST?: string;
-    // SMTP_PORT?: number;
-    // SMTP_USER?: string;
-    // SMTP_PASS?: string;
-
     /* ================= STORAGE ================= */
     PDF_OUTPUT_DIR: string;
 }
 
 /* ======================================================
- * INTERNAL HELPERS
+ * HELPERS
  * ====================================================== */
 
 function requireEnv(key: string): string {
@@ -54,10 +50,7 @@ function optionalEnv(key: string): string | undefined {
     return value && value.trim() !== '' ? value : undefined;
 }
 
-function parseNumber(
-    value: string | undefined,
-    fallback?: number
-): number | undefined {
+function parseNumber(value?: string, fallback?: number): number | undefined {
     if (!value) return fallback;
     const num = Number(value);
     if (Number.isNaN(num)) {
@@ -66,10 +59,7 @@ function parseNumber(
     return num;
 }
 
-function parseBoolean(
-    value: string | undefined,
-    fallback = false
-): boolean {
+function parseBoolean(value?: string, fallback = false): boolean {
     if (!value) return fallback;
     return value === 'true' || value === '1';
 }
@@ -78,23 +68,15 @@ function parseBoolean(
  * LOAD ENV
  * ====================================================== */
 
+const WORKER_MODE =
+    (process.env.WORKER_MODE as WorkerMode) ?? 'PDF';
+
 export const env: AppEnv = {
     NODE_ENV:
         (process.env.NODE_ENV as NodeEnv) ??
         'development',
 
-    /* ================= IMAP ================= */
-    IMAP_HOST: requireEnv('IMAP_HOST'),
-    IMAP_PORT: parseNumber(
-        requireEnv('IMAP_PORT'),
-        993
-    )!,
-    IMAP_USER: requireEnv('IMAP_USER'),
-    IMAP_PASS: requireEnv('IMAP_PASS'),
-    IMAP_TLS: parseBoolean(
-        process.env.IMAP_TLS,
-        true
-    ),
+    WORKER_MODE,
 
     /* ================= DATABASE ================= */
     DATABASE_URL: requireEnv('DATABASE_URL'),
@@ -103,30 +85,34 @@ export const env: AppEnv = {
     THIRD_PARTY_BASE_URL: requireEnv('THIRD_PARTY_BASE_URL'),
     THIRD_PARTY_API_KEY: requireEnv('THIRD_PARTY_API_KEY'),
 
-    /* ================= SMTP (OPTIONAL) ================= */
-    // SMTP_HOST: optionalEnv('SMTP_HOST'),
-    // SMTP_PORT: parseNumber(optionalEnv('SMTP_PORT')),
-    // SMTP_USER: optionalEnv('SMTP_USER'),
-    // SMTP_PASS: optionalEnv('SMTP_PASS'),
-
     /* ================= STORAGE ================= */
     PDF_OUTPUT_DIR:
-        optionalEnv('PDF_OUTPUT_DIR') ??
-        'data/pdf'
+        optionalEnv('PDF_OUTPUT_DIR') ?? 'data/pdf'
 };
 
 /* ======================================================
- * VALIDATION (EXPORTED)
+ * CONDITIONAL IMAP (ONLY IF GMAIL MODE)
  * ====================================================== */
 
-export function validateEnv(): void {
-    // Accessing env ensures required vars are loaded
-    void env;
+if (WORKER_MODE === 'GMAIL') {
+    env.IMAP_HOST = requireEnv('IMAP_HOST');
+    env.IMAP_PORT = parseNumber(process.env.IMAP_PORT, 993);
+    env.IMAP_USER = requireEnv('IMAP_USER');
+    env.IMAP_PASS = requireEnv('IMAP_PASS');
+    env.IMAP_TLS = parseBoolean(process.env.IMAP_TLS, true);
+}
 
+/* ======================================================
+ * VALIDATION
+ * ====================================================== */
+
+export function verifyEnv(): void {
     if (!['development', 'test', 'production'].includes(env.NODE_ENV)) {
-        throw new Error(
-            `❌ Invalid NODE_ENV: ${env.NODE_ENV}`
-        );
+        throw new Error(`❌ Invalid NODE_ENV: ${env.NODE_ENV}`);
+    }
+
+    if (!['PDF', 'GMAIL'].includes(env.WORKER_MODE)) {
+        throw new Error(`❌ Invalid WORKER_MODE: ${env.WORKER_MODE}`);
     }
 }
 
@@ -137,9 +123,13 @@ export function validateEnv(): void {
 export function logEnvSummary(): void {
     console.log('✓ Configuration loaded');
     console.log(`• NODE_ENV = ${env.NODE_ENV}`);
-    console.log(`• IMAP_HOST = ${env.IMAP_HOST}`);
-    console.log(`• IMAP_PORT = ${env.IMAP_PORT}`);
+    console.log(`• WORKER_MODE = ${env.WORKER_MODE}`);
     console.log(`• DATABASE_URL = [HIDDEN]`);
     console.log(`• THIRD_PARTY_BASE_URL = ${env.THIRD_PARTY_BASE_URL}`);
     console.log(`• PDF_OUTPUT_DIR = ${env.PDF_OUTPUT_DIR}`);
+
+    if (env.WORKER_MODE === 'GMAIL') {
+        console.log(`• IMAP_HOST = ${env.IMAP_HOST}`);
+        console.log(`• IMAP_PORT = ${env.IMAP_PORT}`);
+    }
 }

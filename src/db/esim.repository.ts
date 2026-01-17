@@ -93,9 +93,7 @@ export class EsimRepository {
      * FIND
      * ====================================================== */
 
-    async findById(
-        esimId: string
-    ) {
+    async findById(esimId: string) {
         const sql = `
             SELECT
                 e.*,
@@ -110,46 +108,54 @@ export class EsimRepository {
         return rows[0] ?? null;
     }
 
-    async findByOrderItemId(
-        orderItemId: string
-    ) {
-        const sql = `
-            SELECT *
-            FROM esim_details
-            WHERE order_item_id = $1
-        `;
-
-        const { rows } = await pool.query(sql, [orderItemId]);
+    async findByOrderItemId(orderItemId: string) {
+        const { rows } = await pool.query(
+            `SELECT * FROM esim_details WHERE order_item_id = $1`,
+            [orderItemId]
+        );
         return rows[0] ?? null;
     }
 
     /**
-     * eSIM ready for PDF generation
+     * PROCESS → siap generate PDF
      */
-    async findPendingCompletion() {
-        const sql = `
+    async findReadyForFinalize() {
+        const { rows } = await pool.query(`
             SELECT *
             FROM esim_details
             WHERE status = 'PROCESS'
             ORDER BY created_at
-        `;
-
-        const { rows } = await pool.query(sql);
+        `);
         return rows;
     }
 
     /**
-     * PDF generated, waiting external confirmation
+     * COMPLETED → PDF sudah ada tapi belum DONE
      */
-    async findCompletedButNotDone() {
-        const sql = `
+    async findPendingUpload(limit = 20) {
+        const { rows } = await pool.query(
+            `
             SELECT *
             FROM esim_details
             WHERE status = 'COMPLETED'
             ORDER BY updated_at
-        `;
+            LIMIT $1
+            `,
+            [limit]
+        );
+        return rows;
+    }
 
-        const { rows } = await pool.query(sql);
+    /**
+     * DONE → untuk regenerate PDF
+     */
+    async findDone() {
+        const { rows } = await pool.query(`
+            SELECT *
+            FROM esim_details
+            WHERE status = 'DONE'
+            ORDER BY updated_at DESC
+        `);
         return rows;
     }
 
@@ -157,31 +163,15 @@ export class EsimRepository {
      * STATUS TRANSITIONS
      * ====================================================== */
 
-    async markProcess(
-        esimId: string
-    ): Promise<void> {
-
+    async markProcess(esimId: string): Promise<void> {
         await this.updateStatus(esimId, 'PROCESS');
     }
 
-    async markCompleted(
-        esimId: string
-    ): Promise<void> {
-
-        const sql = `
-            UPDATE esim_details
-            SET status = 'COMPLETED',
-                updated_at = NOW()
-            WHERE id = $1
-        `;
-
-        await pool.query(sql, [esimId]);
+    async markCompleted(esimId: string): Promise<void> {
+        await this.updateStatus(esimId, 'COMPLETED');
     }
 
-    async markDone(
-        esimId: string
-    ): Promise<void> {
-
+    async markAsDone(esimId: string): Promise<void> {
         const sql = `
             UPDATE esim_details
             SET status = 'DONE',
@@ -189,43 +179,16 @@ export class EsimRepository {
                 updated_at = NOW()
             WHERE id = $1
         `;
-
         await pool.query(sql, [esimId]);
     }
 
-    async markFailed(
-        esimId: string,
-        reason?: string
-    ): Promise<void> {
-
-        const sql = `
-            UPDATE esim_details
-            SET status = 'FAILED',
-                updated_at = NOW()
-            WHERE id = $1
-        `;
-
-        await pool.query(sql, [esimId]);
+    async markFailed(esimId: string): Promise<void> {
+        await this.updateStatus(esimId, 'FAILED');
     }
 
     /* ======================================================
-     * NEW METHODS FOR FINALIZE WORKFLOW
+     * ADDITIONAL HELPER METHODS
      * ====================================================== */
-
-    /**
-     * Find eSIMs ready to be finalized (COMPLETED status)
-     */
-    async findReadyForFinalize() {
-        const sql = `
-            SELECT *
-            FROM esim_details
-            WHERE status = 'COMPLETED'
-            ORDER BY updated_at
-        `;
-
-        const { rows } = await pool.query(sql);
-        return rows;
-    }
 
     /**
      * Lock eSIM for finalizing (prevents double processing)
@@ -244,14 +207,7 @@ export class EsimRepository {
     }
 
     /**
-     * Mark eSIM as done (final success state)
-     */
-    async markAsDone(esimId: string): Promise<void> {
-        await this.markDone(esimId);
-    }
-
-    /**
-     * Mark eSIM as failed
+     * Mark eSIM as failed (alias)
      */
     async markAsFailed(esimId: string): Promise<void> {
         await this.markFailed(esimId);
@@ -304,14 +260,13 @@ export class EsimRepository {
         esimId: string,
         status: EsimStatus
     ): Promise<void> {
-
         const sql = `
             UPDATE esim_details
             SET status = $2,
                 updated_at = NOW()
             WHERE id = $1
         `;
-
         await pool.query(sql, [esimId, status]);
     }
 }
+

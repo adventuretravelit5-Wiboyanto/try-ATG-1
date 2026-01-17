@@ -1,7 +1,8 @@
+// src/workflows/finalize-order.workflow.ts
+
 import { EsimRepository } from '../db/esim.repository';
 import { OrderRepository } from '../db/order.repository';
 import { SyncLogRepository } from '../db/sync-log.repository';
-
 import { PdfService } from '../services/pdf-service';
 import { GlobalTixUploadService } from '../services/globaltix-upload.service';
 import { OTPService } from '../services/otp.service';
@@ -32,14 +33,12 @@ export class FinalizeOrderWorkflow {
     }
 
     /* ======================================================
-     * RUN WORKFLOW
+     * RUN
      * ====================================================== */
-
     async run(): Promise<void> {
-        logger.info('[FINALIZE] Scanning eSIM READY');
+        logger.info('[FINALIZE] Scanning eSIM ready for finalize');
 
-        const esims =
-            await this.esimRepo.findReadyForFinalize();
+        const esims = await this.esimRepo.findPendingUpload();
 
         if (esims.length === 0) {
             logger.info('[FINALIZE] No eSIM ready');
@@ -49,10 +48,10 @@ export class FinalizeOrderWorkflow {
         for (const esim of esims) {
             try {
                 await this.processSingleEsim(esim);
-            } catch (error) {
+            } catch (err) {
                 logger.error('[FINALIZE] Fatal error', {
                     esimId: esim.id,
-                    error
+                    err
                 });
             }
         }
@@ -61,75 +60,51 @@ export class FinalizeOrderWorkflow {
     /* ======================================================
      * PROCESS SINGLE ESIM
      * ====================================================== */
-
     private async processSingleEsim(esim: any): Promise<void> {
 
-        /* --------------------------------------------------
-         * LOCK (ANTI DOUBLE PROCESS)
-         * -------------------------------------------------- */
-        const locked =
-            await this.esimRepo.markAsFinalizing(esim.id);
-
-        if (!locked) {
-            logger.warn('[FINALIZE] Skip locked eSIM', {
-                esimId: esim.id
-            });
-            return;
-        }
-
-        const orderItem =
-            await this.orderRepo.findItemById(
-                esim.order_item_id
-            );
+        const orderItem = await this.orderRepo.findItemById(
+            esim.order_item_id
+        );
 
         if (!orderItem) {
             logger.warn('[FINALIZE] Order item not found', {
                 orderItemId: esim.order_item_id
             });
-
-            await this.esimRepo.markAsFailed(esim.id);
             return;
         }
 
-        const confirmationCode =
-            orderItem.confirmation_code;
+        const confirmationCode = orderItem.confirmation_code;
+        const referenceNumber = orderItem.reference_number;
 
-        const referenceNumber =
-            orderItem.reference_number;
+        /* ==================================================
+         * IDEMPOTENCY CHECK
+         * ================================================== */
+        const alreadySynced = await this.syncLogRepo.isAlreadySynced(
+            confirmationCode,
+            this.TARGET_SERVICE
+        );
 
-        /* --------------------------------------------------
-         * IDEMPOTENCY CHECK (SUCCESS ONLY)
-         * -------------------------------------------------- */
-        const alreadySuccess =
-            await this.syncLogRepo.isSuccess(
-                confirmationCode,
-                this.TARGET_SERVICE
-            );
-
-        if (alreadySuccess) {
+        if (alreadySynced) {
             logger.info('[FINALIZE] Already finalized', {
                 confirmationCode
             });
 
             await this.esimRepo.markAsDone(esim.id);
-            await this.orderRepo.markItemCompleted(
-                esim.order_item_id
-            );
+            await this.orderRepo.markItemCompleted(esim.order_item_id);
             return;
         }
 
-        /* --------------------------------------------------
-         * GENERATE PDF (DB = SOURCE OF TRUTH)
-         * -------------------------------------------------- */
+        /* ==================================================
+         * GENERATE PDF
+         * ================================================== */
         logger.info('[FINALIZE] Generating PDF', {
             confirmationCode
         });
 
         try {
-            const { pdfPath } =
-                await this.pdfService.generatePdfByEsimId(
-                    esim.id
-                );
+            const { pdfPath } = await this.pdfService.generatePdfByEsimId(
+                esim.id
+            );
 
             /* ----------------------------------------------
              * 🆕 UPLOAD PDF TO GLOBALTIX
@@ -219,7 +194,7 @@ export class FinalizeOrderWorkflow {
                 errorMessage: error?.message
             });
 
-            await this.esimRepo.markAsFailed(esim.id);
+            await this.esimRepo.markFailed(esim.id);
 
             logger.error('[FINALIZE] PDF generation/upload failed', {
                 confirmationCode,
