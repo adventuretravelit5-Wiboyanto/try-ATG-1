@@ -87,7 +87,7 @@ async function regeneratePdf(): Promise<void> {
                 iccid: esim.iccid
             });
 
-            await generatePdfByEsimId(esim);
+            await pdfService.generatePdfByEsimId(esim.id);
 
             logger.info('[REGENERATE PDF] Success', {
                 esimId: esim.id
