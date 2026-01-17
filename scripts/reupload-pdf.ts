@@ -25,7 +25,7 @@ async function reuploadPdf(): Promise<void> {
      * FETCH ESIMs NEEDING PDF REPAIR
      * ====================================================== */
 
-    const esims = await esimRepo.findPendingUpload(LIMIT);
+    const esims = await esimRepo.findCompletedButNotDone();
 
     if (esims.length === 0) {
         logger.info('✅ No PDFs pending reupload');
@@ -60,7 +60,7 @@ async function reuploadPdf(): Promise<void> {
              * FILE EXISTS → MARK DONE
              * ========================================== */
 
-            await esimRepo.markAsDone(esim.id);
+            await esimRepo.markDone(esim.id);
 
             logger.info('✅ PDF exists & marked as DONE', {
                 fileName,
@@ -73,7 +73,7 @@ async function reuploadPdf(): Promise<void> {
                 pdfPath
             });
 
-            await esimRepo.markAsFailed(esim.id);
+            await esimRepo.markFailed(esim.id);
         }
     }
 
