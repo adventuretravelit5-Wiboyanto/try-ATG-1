@@ -1,28 +1,34 @@
 #!/usr/bin/env ts-node
+import 'dotenv/config';
 
 import { EsimRepository } from '../src/db/esim.repository';
 import { OrderRepository } from '../src/db/order.repository';
 import { PdfService } from '../src/services/pdf-service';
-
 import { logger } from '../src/utils/logger';
 
 /* ======================================================
  * CLI ARGUMENT
- * ====================================================== */
-/**
+ * ======================================================
  * Usage:
  *   ts-node scripts/regenerate-pdf.ts CONFIRMATION_CODE
  *   ts-node scripts/regenerate-pdf.ts --all
  */
 
 const args = process.argv.slice(2);
-const targetCode = args[0];
+const target = args[0];
 
 /* ======================================================
  * MAIN
  * ====================================================== */
-async function main() {
+
+async function regeneratePdf(): Promise<void> {
     logger.info('[REGENERATE PDF] Started');
+
+    if (!target) {
+        throw new Error(
+            'Missing argument. Use CONFIRMATION_CODE or --all'
+        );
+    }
 
     const esimRepo = new EsimRepository();
     const orderRepo = new OrderRepository();
@@ -30,93 +36,84 @@ async function main() {
 
     let esims: any[] = [];
 
-    /* --------------------------------------------------
+    /* ======================================================
      * MODE SELECTION
-     * -------------------------------------------------- */
-    if (targetCode === '--all') {
-        logger.info('[REGENERATE PDF] Mode: ALL DONE ESIM');
-        esims = await esimRepo.findDoneEsims();
-    } else if (targetCode) {
-        logger.info('[REGENERATE PDF] Mode: SINGLE', {
-            confirmationCode: targetCode
-        });
+     * ====================================================== */
 
-        const orderItem = await orderRepo.findItemByConfirmationCode(
-            targetCode
-        );
+    if (target === '--all') {
+        logger.info('[REGENERATE PDF] Mode: ALL DONE eSIM');
 
-        if (!orderItem) {
-            throw new Error(`Order item not found: ${targetCode}`);
+        esims = await esimRepo.findDone(); // ✅ METHOD NYATA
+
+        if (esims.length === 0) {
+            logger.warn('[REGENERATE PDF] No DONE eSIM found');
+            return;
         }
 
-        const esim = await esimRepo.findByOrderItemId(orderItem.id);
+    } else {
+        logger.info('[REGENERATE PDF] Mode: SINGLE', {
+            confirmationCode: target
+        });
+
+        const orderItem =
+            await orderRepo.findItemByConfirmationCode(target);
+
+        if (!orderItem) {
+            throw new Error(
+                `Order item not found: ${target}`
+            );
+        }
+
+        const esim =
+            await esimRepo.findByOrderItemId(orderItem.id);
 
         if (!esim) {
-            throw new Error(`eSIM not found for: ${targetCode}`);
+            throw new Error(
+                `eSIM not found for confirmationCode: ${target}`
+            );
         }
 
         esims = [esim];
-    } else {
-        throw new Error(
-            'Missing argument. Use CONFIRMATION_CODE or --all'
-        );
     }
 
-    /* --------------------------------------------------
+    /* ======================================================
      * PROCESS
-     * -------------------------------------------------- */
+     * ====================================================== */
+
     for (const esim of esims) {
-
-        const orderItem = await orderRepo.findItemById(
-            esim.order_item_id
-        );
-
-        if (!orderItem) {
-            logger.warn('[REGENERATE PDF] Order item missing', {
-                orderItemId: esim.order_item_id
+        try {
+            logger.info('[REGENERATE PDF] Generating PDF', {
+                esimId: esim.id,
+                iccid: esim.iccid
             });
-            continue;
+
+            await pdfService.generatePdfByEsimId(
+                esim.id,
+                { force: true } // 🔥 overwrite existing PDF
+            );
+
+            logger.info('[REGENERATE PDF] Success', {
+                esimId: esim.id
+            });
+
+        } catch (error: any) {
+            logger.error('[REGENERATE PDF] Failed', {
+                esimId: esim.id,
+                error: error?.message
+            });
         }
-
-        const confirmationCode = orderItem.confirmation_code;
-        const referenceNumber  = orderItem.reference_number;
-
-        logger.info('[REGENERATE PDF] Generating', {
-            confirmationCode
-        });
-
-        await pdfService.generateEsimPdf({
-            confirmationCode,
-            referenceNumber,
-            productName: esim.product_name,
-            iccid: esim.iccid,
-            qrCode: esim.qr_code,
-            smdpAddress: esim.smdp_address,
-            activationCode: esim.activation_code,
-            combinedActivation: esim.combined_activation,
-            apn: {
-                name: esim.apn_name,
-                username: esim.apn_username,
-                password: esim.apn_password
-            },
-            validFrom: esim.valid_from,
-            validUntil: esim.valid_until,
-            force: true
-        });
-
-        logger.info('[REGENERATE PDF] Done', {
-            confirmationCode
-        });
     }
 
     logger.info('[REGENERATE PDF] Finished');
-    process.exit(0);
 }
 
 /* ======================================================
- * RUN
+ * EXECUTE
  * ====================================================== */
-main().catch(err => {
-    logger.error('[REGENERATE PDF] Fatal error', err);
-    process.exit(1);
-});
+
+regeneratePdf()
+    .then(() => process.exit(0))
+    .catch((err) => {
+        logger.error('[REGENERATE PDF] Fatal error', err);
+        process.exit(1);
+    });

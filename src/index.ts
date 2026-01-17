@@ -1,6 +1,6 @@
 import { ImapService, ImapEmailEvent } from './services/imap-service';
 import { parseGlobalTixEmail } from './parsers/globaltix-email.parser';
-import { SmtpService } from './services/smtp-service';
+// import { SmtpService } from './services/smtp-service';
 import { EsimService } from './services/esim-service';
 import { ThirdPartyService } from './services/third-party.service';
 
@@ -22,7 +22,7 @@ import { env } from './config/env';
 export class GmailWorker {
 
     private readonly imapService: ImapService;
-    private readonly smtpService: SmtpService;
+    // private readonly smtpService: SmtpService;
     private readonly esimService: EsimService;
     private readonly thirdPartyService: ThirdPartyService;
 
@@ -38,7 +38,7 @@ export class GmailWorker {
          * INIT SERVICES
          * ====================================================== */
         this.imapService = new ImapService(imapConfig, emailFilter);
-        this.smtpService = new SmtpService(smtpConfig);
+        // this.smtpService = new SmtpService(smtpConfig);
         this.esimService = new EsimService(esimConfig);
 
         this.thirdPartyService = new ThirdPartyService({

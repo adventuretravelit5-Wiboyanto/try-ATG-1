@@ -40,7 +40,6 @@ export class SyncLogRepository {
 
     /* ======================================================
      * IDEMPOTENCY CHECK
-     * confirmation_code + target_service + SUCCESS
      * ====================================================== */
     async isAlreadySynced(
         confirmationCode: string,
@@ -64,8 +63,7 @@ export class SyncLogRepository {
     }
 
     /* ======================================================
-     * CREATE / UPSERT LOG
-     * - retry-safe
+     * UPSERT LOG (RETRY SAFE)
      * ====================================================== */
     async upsertLog(
         data: SyncLogCreate
@@ -86,6 +84,7 @@ export class SyncLogRepository {
             VALUES ($1,$2,$3,$4,$5,$6,$7,1)
             ON CONFLICT (confirmation_code, target_service)
             DO UPDATE SET
+                request_payload  = EXCLUDED.request_payload,
                 response_payload = EXCLUDED.response_payload,
                 status           = EXCLUDED.status,
                 error_message    = EXCLUDED.error_message,
@@ -107,7 +106,7 @@ export class SyncLogRepository {
     }
 
     /* ======================================================
-     * FETCH FAILED LOGS (RETRY WORKER)
+     * FETCH FAILED LOGS (CRON / RETRY)
      * ====================================================== */
     async getFailedLogs(
         targetService: string,

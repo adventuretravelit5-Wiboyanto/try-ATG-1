@@ -28,10 +28,10 @@ export interface AppEnv {
     THIRD_PARTY_API_KEY: string;
 
     /* ================= SMTP (OPTIONAL) ================= */
-    SMTP_HOST?: string;
-    SMTP_PORT?: number;
-    SMTP_USER?: string;
-    SMTP_PASS?: string;
+    // SMTP_HOST?: string;
+    // SMTP_PORT?: number;
+    // SMTP_USER?: string;
+    // SMTP_PASS?: string;
 
     /* ================= STORAGE ================= */
     PDF_OUTPUT_DIR: string;
@@ -104,10 +104,10 @@ export const env: AppEnv = {
     THIRD_PARTY_API_KEY: requireEnv('THIRD_PARTY_API_KEY'),
 
     /* ================= SMTP (OPTIONAL) ================= */
-    SMTP_HOST: optionalEnv('SMTP_HOST'),
-    SMTP_PORT: parseNumber(optionalEnv('SMTP_PORT')),
-    SMTP_USER: optionalEnv('SMTP_USER'),
-    SMTP_PASS: optionalEnv('SMTP_PASS'),
+    // SMTP_HOST: optionalEnv('SMTP_HOST'),
+    // SMTP_PORT: parseNumber(optionalEnv('SMTP_PORT')),
+    // SMTP_USER: optionalEnv('SMTP_USER'),
+    // SMTP_PASS: optionalEnv('SMTP_PASS'),
 
     /* ================= STORAGE ================= */
     PDF_OUTPUT_DIR:

@@ -3,8 +3,6 @@ import path from 'path';
 import fs from 'fs/promises';
 
 import { EsimRepository } from '../src/db/esim.repository';
-import { PdfService } from '../src/services/pdf-service';
-import { SmtpService } from '../src/services/smtp-service';
 import { logger } from '../src/utils/logger';
 
 /* ======================================================
@@ -18,25 +16,23 @@ const LIMIT = Number(process.env.REUPLOAD_LIMIT ?? 20);
  * MAIN
  * ====================================================== */
 
-async function reuploadPdf() {
+async function reuploadPdf(): Promise<void> {
     logger.info('📤 Starting reupload-pdf script');
 
     const esimRepo = new EsimRepository();
-    const smtpService = new SmtpService();
-    const pdfService = new PdfService();
 
     /* ======================================================
-     * FETCH ESIM READY BUT NOT DONE
+     * FETCH ESIMs NEEDING PDF REPAIR
      * ====================================================== */
 
     const esims = await esimRepo.findPendingUpload(LIMIT);
 
     if (esims.length === 0) {
-        logger.info('✅ No PDFs pending upload');
+        logger.info('✅ No PDFs pending reupload');
         return;
     }
 
-    logger.info(`📦 Found ${esims.length} PDF(s) to reupload`);
+    logger.info(`📦 Found ${esims.length} PDF(s) to re-check`);
 
     /* ======================================================
      * LOOP
@@ -46,7 +42,12 @@ async function reuploadPdf() {
         const fileName = `${esim.reference_number}_${esim.iccid}.pdf`;
         const pdfPath = path.join(PDF_DIR, fileName);
 
-        logger.info(`➡️ Reuploading PDF: ${fileName}`);
+        logger.info('➡️ Checking PDF file', {
+            esimId: esim.id,
+            orderItemId: esim.order_item_id,
+            iccid: esim.iccid,
+            fileName
+        });
 
         try {
             /* ==========================================
@@ -56,34 +57,23 @@ async function reuploadPdf() {
             await fs.access(pdfPath);
 
             /* ==========================================
-             * SEND TO GLOBALTIX
+             * FILE EXISTS → MARK DONE
              * ========================================== */
 
-            await smtpService.sendPdf({
-                to: esim.customer_email,
-                subject: `Your eSIM - ${esim.product_name}`,
+            await esimRepo.markAsDone(esim.id);
+
+            logger.info('✅ PDF exists & marked as DONE', {
+                fileName,
+                esimId: esim.id
+            });
+
+        } catch {
+            logger.warn('⚠️ PDF missing, mark as FAILED', {
+                fileName,
                 pdfPath
             });
 
-            /* ==========================================
-             * UPDATE STATUS → DONE
-             * ========================================== */
-
-            await esimRepo.updateStatus(
-                esim.order_item_id,
-                'DONE'
-            );
-
-            logger.info(`✅ PDF uploaded: ${fileName}`);
-
-        } catch (error: any) {
-
-            logger.error(
-                `❌ Failed reupload PDF: ${fileName}`,
-                { error: error?.message }
-            );
-
-            // ❗ Continue next PDF
+            await esimRepo.markAsFailed(esim.id);
         }
     }
 

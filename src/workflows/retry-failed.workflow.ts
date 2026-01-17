@@ -1,67 +1,35 @@
-import { OrderRepository } from '../db/order.repository';
-import { finalizeOrderWorkflow } from './finalize-order.workflow';
-import { logger } from '../utils/logger';
-import { ORDER_STATUS } from '../constants/order-status';
+// src/workflows/retry-failed.workflow.ts
 
-const MAX_RETRY = 3;
+import { FinalizeOrderWorkflow } from './finalize-order.workflow';
+import { logger } from '../utils/logger';
+
+/* ======================================================
+ * RETRY FAILED WORKFLOW
+ * ====================================================== */
 
 /**
- * Retry failed orders
+ * Retry failed FINALIZATION (PDF + Email)
  *
- * - Fetch FAILED orders
- * - Retry up to MAX_RETRY
+ * - Relies on sync_logs for idempotency
+ * - FinalizeOrderWorkflow will:
+ *   - Skip SUCCESS
+ *   - Retry FAILED
  */
 export async function retryFailedWorkflow(): Promise<void> {
-  const orderRepo = new OrderRepository();
 
-  logger.info('🔁 Retry failed orders started');
+    logger.info('[RETRY] Retry failed finalization started');
 
-  const failedOrders = await orderRepo.findFailedOrders();
-
-  if (failedOrders.length === 0) {
-    logger.info('✅ No failed orders to retry');
-    return;
-  }
-
-  for (const order of failedOrders) {
-    if (order.retryCount >= MAX_RETRY) {
-      logger.warn('⛔ Retry limit reached', {
-        orderId: order.id,
-        retryCount: order.retryCount
-      });
-      continue;
-    }
+    const finalizeWorkflow =
+        new FinalizeOrderWorkflow();
 
     try {
-      logger.info('🔄 Retrying order', {
-        orderId: order.id,
-        attempt: order.retryCount + 1
-      });
+        await finalizeWorkflow.run();
 
-      /* ==============================
-       * 1. MARK AS RETRYING
-       * ============================== */
-      await orderRepo.updateRetrying(
-        order.id,
-        order.retryCount + 1
-      );
+        logger.info('[RETRY] Retry workflow finished');
 
-      /* ==============================
-       * 2. RUN FINALIZE WORKFLOW
-       * ============================== */
-      await finalizeOrderWorkflow(order.id);
-    } catch (error) {
-      logger.error('❌ Retry failed', {
-        orderId: order.id,
-        error
-      });
-
-      /* ==============================
-       * 3. MARK FAILED AGAIN
-       * ============================== */
-      await orderRepo.markFailed(order.id);
+    } catch (err) {
+        logger.error('[RETRY] Fatal retry error', err);
+        throw err;
     }
-  }
-
-  logger.info('🏁 Retry workflow finished');
+    
 }

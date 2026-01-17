@@ -1,97 +1,141 @@
-// src/workflows/process-order.workflow.ts
+import nodemailer, { Transporter } from 'nodemailer';
+import { SmtpConfig, GlobalTixOrder } from '../types';
+import fs from 'fs';
+import path from 'path';
 
-import { ParsedMail } from 'mailparser';
+export class SmtpService {
+    private transporter: Transporter;
+    private config: SmtpConfig;
 
-import { parseGlobalTixEmail } from '../parsers/globaltix-email.parser';
-import { OrderRepository } from '../db/order.repository';
-import { logger } from '../utils/logger';
+    constructor(config: SmtpConfig) {
+        this.config = config;
+        this.transporter = nodemailer.createTransport({
+            host: config.host,
+            port: config.port,
+            secure: config.secure,
+            auth: config.auth
+        });
+    }
 
-/**
- * Process incoming GlobalTix email:
- * 1. Parse email (text + html)
- * 2. Upsert order
- * 3. Upsert order items
- * 4. Mark order as RECEIVED
- *
- * ❗ No third-party call
- * ❗ No eSIM provisioning
- * ❗ No PDF generation
- */
-export async function processIncomingEmail(
-  mail: ParsedMail
-): Promise<void> {
-  logger.info('📩 Processing incoming email');
+    /* ======================================================
+     * VERIFY
+     * ====================================================== */
+    async verify(): Promise<boolean> {
+        try {
+            await this.transporter.verify();
+            console.log('✓ SMTP connection verified');
+            return true;
+        } catch (error) {
+            console.error('✗ SMTP verification failed:', error);
+            return false;
+        }
+    }
 
-  /* ======================================================
-   * 1. PARSE EMAIL
-   * ====================================================== */
-  const parsedOrder = parseGlobalTixEmail(mail);
+    /* ======================================================
+     * DEV / TEST ONLY (SIMULATE INCOMING EMAIL)
+     * ====================================================== */
+    async sendRawMail(options: {
+        from: string;
+        to: string;
+        subject: string;
+        text?: string;
+        html?: string;
+    }): Promise<void> {
+        await this.transporter.sendMail(options);
+        console.log('📤 Dummy email sent:', options.subject);
+    }
 
-  if (!parsedOrder) {
-    logger.warn('⚠️ Email ignored (not GlobalTix)');
-    return;
-  }
+    /* ======================================================
+     * PRODUCTION CUSTOMER EMAIL
+     * ====================================================== */
+    async sendCustomerEmail(
+        order: GlobalTixOrder,
+        esimData?: { codes: string[]; qrCodes: string[] }
+    ): Promise<boolean> {
+        try {
+            const htmlContent = this.generateEmailHtml(order, esimData);
 
-  logger.info('📦 Parsed GlobalTix order', {
-    referenceNumber: parsedOrder.referenceNumber,
-    items: parsedOrder.items.length
-  });
+            const mailOptions = {
+                from: `"${this.config.from.name}" <${this.config.from.email}>`,
+                to: order.customerEmail,
+                cc: order.alternativeEmail || undefined,
+                subject: `eSIM Activation - Order ${order.referenceNumber}`,
+                html: htmlContent
+            };
 
-  const orderRepo = new OrderRepository();
+            const info = await this.transporter.sendMail(mailOptions);
+            console.log('✓ Email sent successfully');
+            console.log(`  Message ID: ${info.messageId}`);
 
-  /* ======================================================
-   * 2. UPSERT ORDER (IDEMPOTENT)
-   * ====================================================== */
-  const order = await orderRepo.upsertOrder({
-    referenceNumber: parsedOrder.referenceNumber,
-    purchaseDate: parsedOrder.purchaseDate,
-    resellerName: parsedOrder.resellerName,
+            return true;
+        } catch (error) {
+            console.error('✗ Failed to send email:', error);
+            return false;
+        }
+    }
 
-    customerName: parsedOrder.customerName,
-    customerEmail: parsedOrder.customerEmail,
-    alternativeEmail: parsedOrder.alternativeEmail,
-    mobileNumber: parsedOrder.mobileNumber,
+    /* ======================================================
+     * TEMPLATE
+     * ====================================================== */
+    private generateEmailHtml(
+        order: GlobalTixOrder,
+        esimData?: { codes: string[]; qrCodes: string[] }
+    ): string {
+        const templatePath = path.join(
+            __dirname,
+            '../templates/customer-email.html'
+        );
 
-    paymentStatus: parsedOrder.paymentStatus,
-    remarks: parsedOrder.remarks
-  });
+        let template: string;
+        try {
+            template = fs.readFileSync(templatePath, 'utf-8');
+        } catch {
+            template = this.getDefaultTemplate();
+        }
 
-  logger.info('✅ Order upserted', {
-    orderId: order.id,
-    referenceNumber: order.referenceNumber
-  });
+        let html = template
+            .replace(/\{\{customerName\}\}/g, order.customerName)
+            .replace(/\{\{referenceNumber\}\}/g, order.referenceNumber)
+            .replace(
+                /\{\{purchaseDate\}\}/g,
+                order.purchaseDate
+                    ? order.purchaseDate.toLocaleDateString('id-ID')
+                    : '-'
+            )
+            .replace(/\{\{mobileNumber\}\}/g, order.mobileNumber ?? '-');
 
-  /* ======================================================
-   * 3. UPSERT ORDER ITEMS
-   * ====================================================== */
-  for (const item of parsedOrder.items) {
-    await orderRepo.upsertOrderItem({
-      orderId: order.id,
+        const itemsHtml = order.items
+            .map(
+                (item, idx) => `
+<tr>
+  <td>${idx + 1}</td>
+  <td>${item.productName}</td>
+  <td>${item.sku}</td>
+  <td>${item.quantity}</td>
+  <td>${item.confirmationCode}</td>
+</tr>`
+            )
+            .join('');
 
-      confirmationCode: item.confirmationCode,
-      productName: item.productName,
-      productVariant: item.productVariant,
-      sku: item.sku,
+        html = html.replace('{{itemsTable}}', itemsHtml);
+        html = html.replace('{{esimDetails}}', '');
 
-      visitDate: item.visitDate,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice
-    });
+        return html;
+    }
 
-    logger.info('🧾 Order item upserted', {
-      confirmationCode: item.confirmationCode
-    });
-  }
-
-  /* ======================================================
-   * 4. UPDATE ORDER STATUS → RECEIVED
-   * ====================================================== */
-  await orderRepo.updateStatus(
-    order.id,
-    'RECEIVED'
-  );
-
-  logger.info('🎯 Order marked as RECEIVED', {
-    referenceNumber: order.referenceNumber
-  });
+    private getDefaultTemplate(): string {
+        return `
+<!DOCTYPE html>
+<html>
+<body>
+  <h2>eSIM Activation</h2>
+  <p>Customer: {{customerName}}</p>
+  <p>Reference: {{referenceNumber}}</p>
+  <table>
+    {{itemsTable}}
+  </table>
+</body>
+</html>
+        `.trim();
+    }
 }
