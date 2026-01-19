@@ -19,7 +19,7 @@ export interface AppEnv {
     IMAP_HOST?: string;
     IMAP_PORT?: number;
     IMAP_USER?: string;
-    IMAP_PASS?: string;
+    IMAP_PASSWORD?: string;
     IMAP_TLS?: boolean;
 
     /* ================= DATABASE ================= */
@@ -98,7 +98,7 @@ if (WORKER_MODE === 'GMAIL') {
     env.IMAP_HOST = requireEnv('IMAP_HOST');
     env.IMAP_PORT = parseNumber(process.env.IMAP_PORT, 993);
     env.IMAP_USER = requireEnv('IMAP_USER');
-    env.IMAP_PASS = requireEnv('IMAP_PASS');
+    env.IMAP_PASSWORD = requireEnv('IMAP_PASSWORD');
     env.IMAP_TLS = parseBoolean(process.env.IMAP_TLS, true);
 }
 

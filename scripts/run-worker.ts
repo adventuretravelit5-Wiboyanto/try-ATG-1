@@ -1,7 +1,7 @@
 import 'dotenv/config';
 
 import { GmailWorker } from '../src';
-import { validateEnv } from '../src/config/env';
+// import { validateEnv } from '../src/config/env';
 import { verifyDbConnection } from '../src/db/pool';
 import { logger } from '../src/utils/logger';
 
@@ -19,8 +19,8 @@ async function bootstrap() {
         /* ==========================================
          * ENV VALIDATION
          * ========================================== */
-        validateEnv();
-        logger.info('✓ Environment configuration valid');
+        // validateEnv();
+        // logger.info('✓ Environment configuration valid');
 
         /* ==========================================
          * DATABASE CHECK

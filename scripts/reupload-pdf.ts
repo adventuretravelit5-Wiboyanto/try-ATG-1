@@ -38,7 +38,7 @@ async function reuploadPdf(): Promise<void> {
      * LOOP
      * ====================================================== */
 
-    for (const esim of esims) {
+    for (const esim of esims.slice(0, LIMIT)) {
         const fileName = `${esim.reference_number}_${esim.iccid}.pdf`;
         const pdfPath = path.join(PDF_DIR, fileName);
 
@@ -60,7 +60,7 @@ async function reuploadPdf(): Promise<void> {
              * FILE EXISTS → MARK DONE
              * ========================================== */
 
-            await esimRepo.markDone(esim.id);
+            await esimRepo.markAsDone(esim.id);
 
             logger.info('✅ PDF exists & marked as DONE', {
                 fileName,

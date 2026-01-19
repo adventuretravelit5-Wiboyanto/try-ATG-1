@@ -1,10 +1,20 @@
-untuk db kan saya sudah menjelaskan bahwa db saya seperti ini nama db "globaltix"
+-- =====================================================
+-- DATABASE: globaltix
+-- =====================================================
 
+-- Jalankan bagian ini sebagai superuser / user dengan privilege CREATE DATABASE
+CREATE DATABASE globaltix;
 
-untuk db kan saya sudah menjelaskan bahwa db saya seperti ini nama db "globaltix"
+\c globaltix;
 
+-- =====================================================
+-- EXTENSIONS
+-- =====================================================
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
-* Tabel orders
+-- =====================================================
+-- TABLE: orders
+-- =====================================================
 CREATE TABLE orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
@@ -28,14 +38,17 @@ CREATE TABLE orders (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-
-*Tabel order_items dengan unique confirmation_code
+-- =====================================================
+-- TABLE: order_items
+-- =====================================================
 CREATE TABLE order_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    order_id UUID NOT NULL
+        REFERENCES orders(id)
+        ON DELETE CASCADE,
 
-    confirmation_code VARCHAR(100) NOT NULL UNIQUE, -- unik untuk mencegah duplikasi
+    confirmation_code VARCHAR(100) NOT NULL UNIQUE,
 
     product_name VARCHAR(255) NOT NULL,
     product_variant VARCHAR(255),
@@ -49,6 +62,45 @@ CREATE TABLE order_items (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- =====================================================
+-- TABLE: esim_details
+-- =====================================================
+CREATE TABLE esim_details (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    order_item_id UUID NOT NULL
+        REFERENCES order_items(id)
+        ON DELETE CASCADE,
+
+    product_name VARCHAR(255) NOT NULL,
+
+    valid_from DATE,
+    valid_until DATE,
+
+    qr_code TEXT,
+
+    iccid VARCHAR(50) UNIQUE,
+
+    smdp_address VARCHAR(255),
+    activation_code VARCHAR(255),
+    combined_activation TEXT,
+
+    apn_name VARCHAR(100),
+    apn_username VARCHAR(100),
+    apn_password VARCHAR(100),
+
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+
+    provisioned_at TIMESTAMP,
+    activated_at TIMESTAMP,
+
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- =====================================================
+-- TABLE: sync_logs
+-- =====================================================
 CREATE TABLE sync_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
@@ -69,9 +121,9 @@ CREATE TABLE sync_logs (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX uq_sync_logs_success
-ON sync_logs (confirmation_code, target_service)
-WHERE status = 'SUCCESS';
+-- =====================================================
+-- INDEXES
+-- =====================================================
 
 CREATE INDEX idx_esim_order_item
 ON esim_details (order_item_id);
@@ -79,6 +131,13 @@ ON esim_details (order_item_id);
 CREATE INDEX idx_esim_status
 ON esim_details (status);
 
+CREATE UNIQUE INDEX uq_sync_logs_success
+ON sync_logs (confirmation_code, target_service)
+WHERE status = 'SUCCESS';
+
+-- =====================================================
+-- UPDATED_AT TRIGGER FUNCTION
+-- =====================================================
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -87,106 +146,20 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_esim_updated_at
-BEFORE UPDATE ON esim_details
+-- =====================================================
+-- TRIGGERS
+-- =====================================================
+CREATE TRIGGER trg_orders_updated_at
+BEFORE UPDATE ON orders
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at();
 
-CREATE TABLE esim_details (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-
-    order_item_id UUID NOT NULL
-        REFERENCES order_items(id)
-        ON DELETE CASCADE,
-
-    product_name VARCHAR(255) NOT NULL,
-
-    valid_from DATE,
-    valid_until DATE,
-
-    qr_code TEXT,
-
-    iccid VARCHAR(50) UNIQUE,
-
-    smdp_address VARCHAR(255),
-
-    activation_code VARCHAR(255),
-
-    combined_activation TEXT,
-
-    apn_name VARCHAR(100),
-    apn_username VARCHAR(100),
-    apn_password VARCHAR(100),
-
-    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
-
-    provisioned_at TIMESTAMP,
-    activated_at TIMESTAMP,
-
-    -- PDF Upload tracking
-    pdf_file_path TEXT,
-    pdf_uploaded_at TIMESTAMP,
-    pdf_upload_confirmed_at TIMESTAMP,
-
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_esim_order_item ON esim_details (order_item_id);
-CREATE INDEX idx_esim_status ON esim_details (status);
-
--- =====================================================
--- UPLOAD OTP TABLE (for admin confirmation)
--- =====================================================
-CREATE TABLE upload_otps (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-
-    -- Reference
-    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    order_item_id UUID NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-    confirmation_code VARCHAR(100) NOT NULL,
-
-    -- OTP details
-    otp_code VARCHAR(6) NOT NULL UNIQUE,
-    otp_expires_at TIMESTAMP NOT NULL,
-
-    -- Upload details
-    pdf_file_path TEXT NOT NULL,
-    globaltix_upload_url TEXT,
-    globaltix_response JSONB,
-
-    -- Status tracking
-    status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
-        CHECK (status IN ('PENDING', 'CONFIRMED', 'EXPIRED', 'FAILED')),
-
-    -- Admin confirmation
-    confirmed_by VARCHAR(255),
-    confirmed_at TIMESTAMP,
-
-    -- Timestamps
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_upload_otp_code ON upload_otps(otp_code);
-CREATE INDEX idx_upload_status ON upload_otps(status);
-CREATE INDEX idx_upload_confirmation_code ON upload_otps(confirmation_code);
-CREATE INDEX idx_upload_created_at ON upload_otps(created_at DESC);
-
-CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_esim_updated_at
-BEFORE UPDATE ON esim_details
+CREATE TRIGGER trg_sync_logs_updated_at
+BEFORE UPDATE ON sync_logs
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at();
 
-CREATE TRIGGER trg_upload_otp_updated_at
-BEFORE UPDATE ON upload_otps
+CREATE TRIGGER trg_esim_updated_at
+BEFORE UPDATE ON esim_details
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at();

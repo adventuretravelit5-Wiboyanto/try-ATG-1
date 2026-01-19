@@ -10,8 +10,22 @@ import { ensureDirExists } from '../utils/file';
  * ====================================================== */
 
 export type GeneratePdfResult = {
-    pdfPath: string;
-    fileName: string;
+  pdfPath: string;
+  fileName: string;
+};
+
+export type EsimPdfData = {
+  product_name: string;
+  valid_from: string | null;
+  valid_until: string | null;
+  qr_code: string;
+  iccid: string;
+  smdp_address: string;
+  activation_code: string;
+  combined_activation: string;
+  apn_name?: string | null;
+  apn_username?: string | null;
+  apn_password?: string | null;
 };
 
 /* ======================================================
@@ -20,131 +34,125 @@ export type GeneratePdfResult = {
 
 export class PdfService {
 
-    private readonly esimRepo: EsimRepository;
-    private readonly templatePath: string;
-    private readonly outputDir: string;
+  private readonly esimRepo = new EsimRepository();
 
-    constructor(
-        esimRepo = new EsimRepository()
-    ) {
-        this.esimRepo = esimRepo;
+  private readonly templatePath = path.resolve(
+    process.cwd(),
+    'src/pdf/templates/esim-pdf.html'
+  );
 
-        this.templatePath = path.resolve(
-            process.cwd(),
-            'src/pdf/templates/esim-pdf.html'
-        );
+  private readonly outputDir = path.resolve(
+    process.cwd(),
+    'data/pdf'
+  );
 
-        this.outputDir = path.resolve(
-            process.cwd(),
-            'data/pdf'
-        );
+  /* ======================================================
+   * PUBLIC API
+   * ====================================================== */
+
+  async generatePdfByEsimId(
+    esimId: string,
+    options?: { force?: boolean }
+  ): Promise<GeneratePdfResult> {
+
+    const esim = await this.esimRepo.findById(esimId);
+
+    if (!esim) {
+      throw new Error(`eSIM not found: ${esimId}`);
     }
 
-    /* ======================================================
-     * PUBLIC API
-     * ====================================================== */
+    if (!options?.force && esim.status !== 'COMPLETED') {
+      throw new Error(
+        `PDF generation blocked. Status=${esim.status}`
+      );
+    }
 
-    /**
-     * Generate PDF for ONE eSIM
-     * Only allowed when status = READY
-     */
-    async generatePdfByEsimId(
-        esimId: string
-    ): Promise<GeneratePdfResult> {
+    await ensureDirExists(this.outputDir);
 
-        const esim =
-            await this.esimRepo.findById(esimId);
+    const fileName =
+      `${esim.reference_number}_${esim.iccid}.pdf`;
 
-        if (!esim) {
-            throw new Error(`eSIM not found: ${esimId}`);
+    const pdfPath =
+      path.join(this.outputDir, fileName);
+
+    const pdfData: EsimPdfData = {
+      product_name: esim.product_name,
+      valid_from: esim.valid_from,
+      valid_until: esim.valid_until,
+      qr_code: esim.qr_code,
+      iccid: esim.iccid,
+      smdp_address: esim.smdp_address,
+      activation_code: esim.activation_code,
+      combined_activation: esim.combined_activation,
+      apn_name: esim.apn_name,
+      apn_username: esim.apn_username,
+      apn_password: esim.apn_password
+    };
+
+    await this.generatePdf(pdfData, pdfPath);
+
+    return { pdfPath, fileName };
+  }
+
+  /* ======================================================
+   * INTERNALS
+   * ====================================================== */
+
+  /**
+   * Template contract:
+   * {{PRODUCT_NAME}}, {{VALID_FROM}}, {{VALID_UNTIL}}, {{ICCID}}, ...
+   */
+  private async renderTemplate(
+    data: EsimPdfData
+  ): Promise<string> {
+
+    let html = await fs.readFile(this.templatePath, 'utf-8');
+
+    Object.entries(data).forEach(([key, value]) => {
+      html = html.replace(
+        new RegExp(`{{${key.toUpperCase()}}}`, 'g'),
+        value ?? '-'
+      );
+    });
+
+    return html;
+  }
+
+  private async generatePdf(
+    data: EsimPdfData,
+    outputPath: string
+  ): Promise<void> {
+
+    let browser: Browser | null = null;
+
+    try {
+      const html = await this.renderTemplate(data);
+
+      browser = await chromium.launch({ headless: true });
+      const page = await browser.newPage();
+
+      await page.setContent(html, {
+        waitUntil: 'networkidle'
+      });
+
+      await page.pdf({
+        path: outputPath,
+        format: 'A4',
+        printBackground: true,
+        margin: {
+          top: '20mm',
+          bottom: '20mm',
+          left: '15mm',
+          right: '15mm'
         }
+      });
 
-        if (esim.status !== 'READY') {
-            throw new Error(
-                `PDF generation blocked. Status=${esim.status}`
-            );
-        }
-
-        await ensureDirExists(this.outputDir);
-
-        const html =
-            await this.renderTemplate(esim);
-
-        const fileName =
-            `${esim.reference_number}_${esim.iccid}.pdf`;
-
-        const pdfPath =
-            path.join(this.outputDir, fileName);
-
-        await this.generatePdf(html, pdfPath);
-
-        return {
-            pdfPath,
-            fileName
-        };
+    } catch (err: any) {
+      throw new Error(
+        `PDF generation failed: ${err?.message ?? err}`
+      );
+    } finally {
+      if (browser) await browser.close();
     }
-
-    /* ======================================================
-     * INTERNALS
-     * ====================================================== */
-
-    private async renderTemplate(
-        esim: any
-    ): Promise<string> {
-
-        let template =
-            await fs.readFile(this.templatePath, 'utf-8');
-
-        return template
-            .replace(/{{PRODUCT_NAME}}/g, esim.product_name ?? '-')
-            .replace(/{{VALID_FROM}}/g, esim.valid_from ?? '-')
-            .replace(/{{VALID_UNTIL}}/g, esim.valid_until ?? '-')
-            .replace(/{{ICCID}}/g, esim.iccid ?? '-')
-            .replace(/{{QR_CODE}}/g, esim.qr_code ?? '-')
-            .replace(/{{SMDP_ADDRESS}}/g, esim.smdp_address ?? '-')
-            .replace(/{{ACTIVATION_CODE}}/g, esim.activation_code ?? '-')
-            .replace(/{{COMBINED_ACTIVATION}}/g, esim.combined_activation ?? '-')
-            .replace(/{{APN_NAME}}/g, esim.apn_name ?? '-')
-            .replace(/{{APN_USERNAME}}/g, esim.apn_username ?? '-')
-            .replace(/{{APN_PASSWORD}}/g, esim.apn_password ?? '-');
-    }
-
-    private async generatePdf(
-        html: string,
-        outputPath: string
-    ): Promise<void> {
-
-        let browser: Browser | null = null;
-
-        try {
-            browser = await chromium.launch({ headless: true });
-
-            const page = await browser.newPage();
-
-            await page.setContent(html, {
-                waitUntil: 'networkidle'
-            });
-
-            await page.pdf({
-                path: outputPath,
-                format: 'A4',
-                printBackground: true,
-                margin: {
-                    top: '20mm',
-                    bottom: '20mm',
-                    left: '15mm',
-                    right: '15mm'
-                }
-            });
-
-        } catch (error: any) {
-            throw new Error(
-                `PDF generation failed: ${error?.message}`
-            );
-        } finally {
-            if (browser) {
-                await browser.close();
-            }
-        }
-    }
+  }
 }
